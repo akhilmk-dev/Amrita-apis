@@ -1,0 +1,438 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  // url      = env("DATABASE_URL")
+}
+
+// ── HOSPITAL STRUCTURE ─────────────────────────────────────────
+
+model towers {
+  id         Int      @id @default(autoincrement()) @db.UnsignedInt
+  name       String   @db.VarChar(100)
+  code       String   @unique @db.VarChar(20)
+  sort_order Int      @default(0) @db.UnsignedTinyInt
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now()) @db.DateTime(0)
+  updated_at DateTime @default(now()) @updatedAt @db.DateTime(0)
+  floors     floors[]
+}
+
+model floors {
+  id           Int          @id @default(autoincrement()) @db.UnsignedInt
+  tower_id     Int          @db.UnsignedInt
+  floor_number Int          @db.TinyInt
+  floor_name   String       @db.VarChar(100)
+  is_active    Boolean      @default(true)
+  created_at   DateTime     @default(now()) @db.DateTime(0)
+  updated_at   DateTime     @default(now()) @updatedAt @db.DateTime(0)
+  tower        towers       @relation(fields: [tower_id], references: [id])
+  locations    locations[]
+  staff_bays   staff_bays[]
+
+  @@unique([tower_id, floor_number], map: "uq_tower_floor")
+}
+
+model locations {
+  id                Int      @id @default(autoincrement()) @db.UnsignedInt
+  floor_id          Int      @db.UnsignedInt
+  name              String   @db.VarChar(150)
+  code              String?  @db.VarChar(50)
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now()) @db.DateTime(0)
+  updated_at        DateTime @default(now()) @updatedAt @db.DateTime(0)
+  floor             floors   @relation(fields: [floor_id], references: [id])
+  tasks_pickup      tasks[]  @relation("PickupLocation")
+  tasks_destination tasks[]  @relation("DestinationLocation")
+}
+
+model staff_bays {
+  id                   Int                    @id @default(autoincrement()) @db.UnsignedInt
+  floor_id             Int                    @db.UnsignedInt
+  name                 String                 @db.VarChar(100)
+  qr_code              String                 @unique @db.VarChar(255)
+  is_active            Boolean                @default(true)
+  created_at           DateTime               @default(now()) @db.DateTime(0)
+  updated_at           DateTime               @default(now()) @updatedAt @db.DateTime(0)
+  floor                floors                 @relation(fields: [floor_id], references: [id])
+  staff_current_status staff_current_status[]
+  bay_tap_events       bay_tap_events[]
+  staff_shifts         staff_shifts[]
+}
+
+// ── ACCESS MANAGEMENT ──────────────────────────────────────────
+
+model permissions {
+  id               Int                @id @default(autoincrement()) @db.UnsignedSmallInt
+  module           String             @db.VarChar(60)
+  action           String             @db.VarChar(60)
+  description      String?            @db.VarChar(255)
+  created_at       DateTime           @default(now()) @db.DateTime(0)
+  updated_at       DateTime           @default(now()) @updatedAt @db.DateTime(0)
+  role_permissions role_permissions[]
+
+  @@unique([module, action], map: "uq_perm")
+}
+
+model roles {
+  id               Int                @id @default(autoincrement()) @db.UnsignedTinyInt
+  name             String             @unique @db.VarChar(80)
+  role_key         String?            @unique @db.VarChar(50)
+  description      String?            @db.VarChar(255)
+  is_active        Boolean            @default(true)
+  created_at       DateTime           @default(now()) @db.DateTime(0)
+  updated_at       DateTime           @default(now()) @updatedAt @db.DateTime(0)
+  role_permissions role_permissions[]
+  users            users[]
+}
+
+model role_permissions {
+  role_id       Int         @db.UnsignedTinyInt
+  permission_id Int         @db.UnsignedSmallInt
+  created_at    DateTime    @default(now()) @db.DateTime(0)
+  role          roles       @relation(fields: [role_id], references: [id], onDelete: Cascade)
+  permission    permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade)
+
+  @@id([role_id, permission_id])
+}
+
+model users {
+  id                       Int                       @id @default(autoincrement()) @db.UnsignedInt
+  role_id                  Int                       @db.UnsignedTinyInt
+  meta_flow_id             String?                   @unique @db.VarChar(100)
+  name                     String                    @db.VarChar(100)
+  employee_id              String?                   @unique @db.VarChar(50)
+  email                    String?                   @unique @db.VarChar(150)
+  phone                    String?                   @db.VarChar(20)
+  password_hash            String                    @db.VarChar(255)
+  fcm_token                String?                   @db.VarChar(255)
+  is_active                Boolean                   @default(true)
+  created_at               DateTime                  @default(now()) @db.DateTime(0)
+  updated_at               DateTime                  @default(now()) @updatedAt @db.DateTime(0)
+  role                     roles                     @relation(fields: [role_id], references: [id])
+  tasks_created            tasks[]                   @relation("CreatedBy")
+  task_timeline_actor      task_timeline[]           @relation("Actor")
+  task_timeline_staff      task_timeline[]           @relation("Staff")
+  task_agents              task_agents[]             @relation("StaffAgent")
+  task_agents_assigned     task_agents[]             @relation("AgentAssigner")
+  task_assignment_history  task_assignment_history[] @relation("StaffAssignment")
+  task_assignment_assigned task_assignment_history[] @relation("AssignmentAssigner")
+  staff_current_status     staff_current_status?
+  bay_tap_events           bay_tap_events[]
+  staff_shifts             staff_shifts[]
+  notifications            notifications[]
+  audit_logs               audit_logs[]
+}
+
+// ── LOOKUP ─────────────────────────────────────────────────────
+
+model rejection_reasons {
+  id                      Int                       @id @default(autoincrement()) @db.UnsignedTinyInt
+  reason                  String                    @unique @db.VarChar(150)
+  is_active               Boolean                   @default(true)
+  created_at              DateTime                  @default(now()) @db.DateTime(0)
+  updated_at              DateTime                  @default(now()) @updatedAt @db.DateTime(0)
+  task_timeline           task_timeline[]
+  task_agents             task_agents[]
+  task_assignment_history task_assignment_history[]
+}
+
+// ── TASKS ──────────────────────────────────────────────────────
+
+model tasks {
+  id                      Int                       @id @default(autoincrement()) @db.UnsignedInt
+  task_number             String                    @unique @db.VarChar(20)
+  meta_flow_id            String?                   @unique @db.VarChar(150)
+  source                  tasks_source              @default(manual)
+  requestor_name          String                    @db.VarChar(100)
+  requestor_phone         String?                   @db.VarChar(20)
+  requestor_extension     String?                   @db.VarChar(20)
+  patient_name            String?                   @db.VarChar(100)
+  patient_mrd             String?                   @db.VarChar(50)
+  patient_phone           String?                   @db.VarChar(20)
+  pickup_location_id      Int                       @db.UnsignedInt
+  destination_location_id Int                       @db.UnsignedInt
+  asset_type              String                    @db.VarChar(80)
+  asset_type_notes        String?                   @db.VarChar(255)
+  scheduled_at            DateTime?
+  transfer_purpose        String?                   @db.VarChar(100)
+  remarks                 String?                   @db.Text
+  required_agents         Int                       @default(1) @db.UnsignedTinyInt
+  status                  tasks_status              @default(new)
+  sla_minutes             Int                       @default(15) @db.UnsignedTinyInt
+  first_accepted_at       DateTime?
+  first_picked_up_at      DateTime?
+  all_delivered_at        DateTime?
+  completed_at            DateTime?
+  cancelled_at            DateTime?
+  cancellation_reason     String?                   @db.VarChar(255)
+  created_by              Int?                      @db.UnsignedInt
+  created_at              DateTime                  @default(now()) @db.DateTime(0)
+  updated_at              DateTime                  @default(now()) @updatedAt @db.DateTime(0)
+  pickup_location         locations                 @relation("PickupLocation", fields: [pickup_location_id], references: [id])
+  destination_location    locations                 @relation("DestinationLocation", fields: [destination_location_id], references: [id])
+  creator                 users?                    @relation("CreatedBy", fields: [created_by], references: [id])
+  task_timeline           task_timeline[]
+  task_agents             task_agents[]
+  task_assignment_history task_assignment_history[]
+  staff_current_status    staff_current_status[]
+  notifications           notifications[]
+  meta_flow_requests      meta_flow_requests?
+
+  @@index([status])
+  @@index([created_at])
+  @@index([meta_flow_id])
+}
+
+enum tasks_source {
+  manual
+  meta_flow
+}
+
+enum tasks_status {
+  new
+  delivery_assigned
+  reassigning
+  in_progress
+  completed
+  cancelled
+}
+
+model task_timeline {
+  id                  BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
+  task_id             Int                 @db.UnsignedInt
+  event_type          task_timeline_event
+  from_status         tasks_status?
+  to_status           tasks_status?
+  actor_id            Int?                @db.UnsignedInt
+  actor_type          task_timeline_actor @default(system)
+  staff_id            Int?                @db.UnsignedInt
+  rejection_reason_id Int?                @db.UnsignedTinyInt
+  rejection_notes     String?             @db.VarChar(500)
+  notes               String?             @db.VarChar(500)
+  created_at          DateTime            @default(now()) @db.DateTime(0)
+  task                tasks               @relation(fields: [task_id], references: [id])
+  actor               users?              @relation("Actor", fields: [actor_id], references: [id])
+  staff               users?              @relation("Staff", fields: [staff_id], references: [id])
+  rejection_reason    rejection_reasons?  @relation(fields: [rejection_reason_id], references: [id])
+
+  @@index([task_id, created_at])
+  @@index([staff_id, created_at])
+  @@index([event_type])
+}
+
+enum task_timeline_event {
+  created
+  staff_assigned
+  staff_accepted
+  staff_rejected
+  staff_timeout
+  picked_up
+  delivered
+  all_delivered
+  completed
+  cancelled
+  note_added
+}
+
+enum task_timeline_actor {
+  admin
+  delivery_staff
+  system
+  meta_flow
+}
+
+model task_agents {
+  id                  Int                @id @default(autoincrement()) @db.UnsignedInt
+  task_id             Int                @db.UnsignedInt
+  staff_id            Int                @db.UnsignedInt
+  agent_label         String?            @db.VarChar(80)
+  slot_number         Int                @default(1) @db.UnsignedTinyInt
+  assigned_by         Int?               @db.UnsignedInt
+  assigned_at         DateTime           @default(now()) @db.DateTime(0)
+  agent_status        agent_status       @default(pending)
+  accepted_at         DateTime?
+  picked_up_at        DateTime?
+  delivered_at        DateTime?
+  rejection_reason_id Int?               @db.UnsignedTinyInt
+  rejection_notes     String?            @db.VarChar(255)
+  created_at          DateTime           @default(now()) @db.DateTime(0)
+  updated_at          DateTime           @default(now()) @updatedAt @db.DateTime(0)
+  task                tasks              @relation(fields: [task_id], references: [id])
+  staff               users              @relation("StaffAgent", fields: [staff_id], references: [id])
+  assigner            users?             @relation("AgentAssigner", fields: [assigned_by], references: [id], map: "task_agents_assigned_by_fkey")
+  rejection_reason    rejection_reasons? @relation(fields: [rejection_reason_id], references: [id])
+
+  @@unique([task_id, slot_number], map: "uq_task_slot")
+  @@index([task_id])
+  @@index([staff_id])
+}
+
+enum agent_status {
+  pending
+  accepted
+  picked_up
+  delivered
+  rejected
+  timeout
+}
+
+model task_assignment_history {
+  id                  Int                @id @default(autoincrement()) @db.UnsignedInt
+  task_id             Int                @db.UnsignedInt
+  staff_id            Int                @db.UnsignedInt
+  slot_number         Int                @default(1) @db.UnsignedTinyInt
+  assigned_by         Int?               @db.UnsignedInt
+  assignment_round    Int                @default(1) @db.UnsignedTinyInt
+  assigned_at         DateTime           @default(now()) @db.DateTime(0)
+  response            agent_status       @default(pending)
+  response_at         DateTime?
+  rejection_reason_id Int?               @db.UnsignedTinyInt
+  rejection_notes     String?            @db.VarChar(255)
+  updated_at          DateTime           @default(now()) @updatedAt @db.DateTime(0)
+  task                tasks              @relation(fields: [task_id], references: [id])
+  staff               users              @relation("StaffAssignment", fields: [staff_id], references: [id])
+  assigner            users?             @relation("AssignmentAssigner", fields: [assigned_by], references: [id], map: "task_assignment_history_assigned_by_fkey")
+  rejection_reason    rejection_reasons? @relation(fields: [rejection_reason_id], references: [id])
+
+  @@index([task_id])
+  @@index([staff_id])
+}
+
+// ── STAFF AVAILABILITY ─────────────────────────────────────────
+
+model staff_current_status {
+  staff_id        Int                @id @db.UnsignedInt
+  availability    staff_availability @default(off_shift)
+  current_bay_id  Int?               @db.UnsignedInt
+  current_task_id Int?               @db.UnsignedInt
+  last_seen_at    DateTime?
+  updated_at      DateTime           @default(now()) @updatedAt @db.DateTime(0)
+  staff           users              @relation(fields: [staff_id], references: [id])
+  bay             staff_bays?        @relation(fields: [current_bay_id], references: [id])
+  task            tasks?             @relation(fields: [current_task_id], references: [id])
+}
+
+enum staff_availability {
+  available
+  on_job
+  on_break
+  off_shift
+}
+
+// ── ATTENDANCE ─────────────────────────────────────────────────
+
+model bay_tap_events {
+  id         BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  staff_id   Int           @db.UnsignedInt
+  bay_id     Int           @db.UnsignedInt
+  event_type bay_tap_event
+  created_at DateTime      @default(now()) @db.DateTime(0)
+  staff      users         @relation(fields: [staff_id], references: [id])
+  bay        staff_bays    @relation(fields: [bay_id], references: [id])
+
+  @@index([staff_id, created_at])
+  @@index([bay_id, created_at])
+}
+
+enum bay_tap_event {
+  shift_start
+  break_start
+  break_end
+  shift_end
+  location_update
+}
+
+model staff_shifts {
+  id                  Int            @id @default(autoincrement()) @db.UnsignedInt
+  staff_id            Int            @db.UnsignedInt
+  shift_date          DateTime       @db.Date
+  shift_start         DateTime       @db.DateTime(0)
+  shift_end           DateTime?      @db.DateTime(0)
+  total_break_minutes Int            @default(0) @db.UnsignedSmallInt
+  total_jobs          Int            @default(0) @db.UnsignedSmallInt
+  start_bay_id        Int?           @db.UnsignedInt
+  is_complete         Boolean        @default(false)
+  created_at          DateTime       @default(now()) @db.DateTime(0)
+  updated_at          DateTime       @default(now()) @updatedAt @db.DateTime(0)
+  staff               users          @relation(fields: [staff_id], references: [id])
+  start_bay           staff_bays?    @relation(fields: [start_bay_id], references: [id])
+  shift_breaks        shift_breaks[]
+
+  @@unique([staff_id, shift_date], map: "uq_staff_shift_date")
+}
+
+model shift_breaks {
+  id               Int          @id @default(autoincrement()) @db.UnsignedInt
+  shift_id         Int          @db.UnsignedInt
+  break_start      DateTime     @db.DateTime(0)
+  break_end        DateTime?    @db.DateTime(0)
+  duration_minutes Int?         @db.UnsignedSmallInt
+  created_at       DateTime     @default(now()) @db.DateTime(0)
+  updated_at       DateTime     @default(now()) @updatedAt @db.DateTime(0)
+  shift            staff_shifts @relation(fields: [shift_id], references: [id])
+}
+
+// ── NOTIFICATIONS ──────────────────────────────────────────────
+
+model notifications {
+  id         BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id    Int       @db.UnsignedInt
+  task_id    Int?      @db.UnsignedInt
+  type       String    @db.VarChar(50)
+  title      String    @db.VarChar(150)
+  body       String?   @db.VarChar(500)
+  is_read    Boolean   @default(false)
+  sent_at    DateTime  @default(now()) @db.DateTime(0)
+  read_at    DateTime?
+  updated_at DateTime  @default(now()) @updatedAt @db.DateTime(0)
+  user       users     @relation(fields: [user_id], references: [id])
+  task       tasks?    @relation(fields: [task_id], references: [id])
+
+  @@index([user_id, is_read])
+}
+
+// ── META FLOW INTEGRATION ──────────────────────────────────────
+
+model meta_flow_requests {
+  id            Int                  @id @default(autoincrement()) @db.UnsignedInt
+  external_id   String               @unique @db.VarChar(150)
+  raw_payload   Json?
+  task_id       Int?                 @unique @db.UnsignedInt
+  status        meta_flow_req_status @default(received)
+  error_message String?              @db.Text
+  created_at    DateTime             @default(now()) @db.DateTime(0)
+  updated_at    DateTime             @default(now()) @updatedAt @db.DateTime(0)
+  task          tasks?               @relation(fields: [task_id], references: [id])
+}
+
+enum meta_flow_req_status {
+  received
+  processed
+  failed
+}
+
+// ── AUDIT LOG ──────────────────────────────────────────────────
+
+model audit_logs {
+  id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id     Int?     @db.UnsignedInt
+  role_id     Int?     @db.UnsignedTinyInt
+  action      String   @db.VarChar(100)
+  entity_type String   @db.VarChar(60)
+  entity_id   String   @db.VarChar(40)
+  old_value   Json?
+  new_value   Json?
+  ip_address  String?  @db.VarChar(45)
+  user_agent  String?  @db.VarChar(300)
+  meta        Json?
+  created_at  DateTime @default(now()) @db.DateTime(0)
+  user        users?   @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id, created_at])
+  @@index([entity_type, entity_id])
+  @@index([action, created_at])
+  @@index([created_at])
+}
