@@ -30,9 +30,16 @@ export const getAllUsers = async (req, res, next) => {
   try {
     const { page, limit, skip } = getPaginationParams(req.query);
 
+    const whereCondition = {
+      role: {
+        role_key: { not: 'delivery_staff' }
+      }
+    };
+
     const [count, users] = await Promise.all([
-      prisma.users.count(),
+      prisma.users.count({ where: whereCondition }),
       prisma.users.findMany({
+        where: whereCondition,
         skip,
         take: limit,
         include: {

@@ -3,7 +3,7 @@ import * as staffController from '../controllers/staff.controller.js';
 import authMiddleware from '../middlewares/auth.middleware.js';
 import { checkPermission } from '../middlewares/permission.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { paginationQuerySchema, createDeliveryStaffSchema } from '../validations/schemas.js';
+import { paginationQuerySchema, createDeliveryStaffSchema, updateDeliveryStaffSchema } from '../validations/schemas.js';
 
 const router = Router();
 
@@ -87,6 +87,8 @@ router.get('/available', authMiddleware, checkPermission('staff', 'view'), staff
  *                 type: string
  *               employee_id:
  *                 type: string
+ *               is_active:
+ *                 type: boolean
  *     responses:
  *       201:
  *         description: Delivery staff created successfully
@@ -96,5 +98,73 @@ router.get('/available', authMiddleware, checkPermission('staff', 'view'), staff
  *         description: Forbidden
  */
 router.post('/', authMiddleware, checkPermission('staff', 'create'), validate(createDeliveryStaffSchema), staffController.createDeliveryStaff);
+
+/**
+ * @swagger
+ * /api/v1/staff/{id}:
+ *   put:
+ *     summary: Update an existing delivery staff
+ *     tags: [Staff]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Staff ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *               phone:
+ *                 type: string
+ *               employee_id:
+ *                 type: string
+ *               is_active:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Delivery staff updated successfully
+ *       400:
+ *         description: Validation error or Email/Employee ID exists
+ *       404:
+ *         description: Staff not found
+ */
+router.put('/:id', authMiddleware, checkPermission('staff', 'edit'), validate(updateDeliveryStaffSchema), staffController.updateDeliveryStaff);
+
+/**
+ * @swagger
+ * /api/v1/staff/{id}:
+ *   delete:
+ *     summary: Deactivate (soft delete) a delivery staff
+ *     tags: [Staff]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Staff ID
+ *     responses:
+ *       200:
+ *         description: Delivery staff deactivated successfully
+ *       404:
+ *         description: Staff not found
+ */
+router.delete('/:id', authMiddleware, checkPermission('staff', 'delete'), staffController.deactivateDeliveryStaff);
 
 export default router;

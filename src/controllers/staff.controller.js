@@ -116,7 +116,7 @@ export const getAllDeliveryStaff = async (req, res, next) => {
  */
 export const createDeliveryStaff = async (req, res, next) => {
   try {
-    const { name, email, password, phone, employee_id } = req.body;
+    const { name, email, password, phone, employee_id, is_active } = req.body;
 
     // Get delivery_staff role id
     const role = await prisma.roles.findUnique({
@@ -149,7 +149,7 @@ export const createDeliveryStaff = async (req, res, next) => {
         role_id: role.id,
         phone,
         employee_id,
-        is_active: true
+        is_active: is_active !== undefined ? is_active : true
       },
       select: {
         id: true,
@@ -163,6 +163,122 @@ export const createDeliveryStaff = async (req, res, next) => {
     });
 
     return successResponse(res, newStaff, 'Delivery staff created successfully', 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Update an existing delivery staff
+ */
+export const updateDeliveryStaff = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { name, email, password, phone, employee_id, is_active } = req.body;
+
+    const staffId = parseInt(id);
+
+    // Verify staff exists and is delivery_staff
+    const existingStaff = await prisma.users.findUnique({
+      where: { id: staffId },
+      include: { role: true }
+    });
+
+    if (!existingStaff || existingStaff.role?.role_key !== 'delivery_staff') {
+      throw new ApiError('Delivery staff not found', 404);
+    }
+
+    // Check unique constraints for email and employee_id if they are being updated
+    if (email && email !== existingStaff.email) {
+      const emailExists = await prisma.users.findUnique({ where: { email } });
+      if (emailExists) throw new ApiError('Email already exists', 400);
+    }
+
+    if (employee_id && employee_id !== existingStaff.employee_id) {
+      const empIdExists = await prisma.users.findUnique({ where: { employee_id } });
+      if (empIdExists) throw new ApiError('Employee ID already exists', 400);
+    }
+
+    // Prepare update data
+    const updateData = {
+      name,
+      email,
+      phone,
+      employee_id,
+      is_active
+    };
+
+    // Remove undefined values
+    Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
+
+    if (password) {
+      const salt = await bcrypt.genSalt(10);
+      updateData.password_hash = await bcrypt.hash(password, salt);
+    }
+
+    const updatedStaff = await prisma.users.update({
+      where: { id: staffId },
+      data: updateData,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        employee_id: true,
+        is_active: true,
+        updated_at: true
+      }
+    });
+
+    // If deactivated, we might want to also update their staff_current_status
+    if (is_active === false && existingStaff.is_active === true) {
+      await prisma.staff_current_status.updateMany({
+        where: { staff_id: staffId },
+        data: { availability: 'off_shift' }
+      });
+    }
+
+    return successResponse(res, updatedStaff, 'Delivery staff updated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Deactivate (soft delete) a delivery staff
+ */
+export const deactivateDeliveryStaff = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const staffId = parseInt(id);
+
+    // Verify staff exists and is delivery_staff
+    const existingStaff = await prisma.users.findUnique({
+      where: { id: staffId },
+      include: { role: true }
+    });
+
+    if (!existingStaff || existingStaff.role?.role_key !== 'delivery_staff') {
+      throw new ApiError('Delivery staff not found', 404);
+    }
+
+    const updatedStaff = await prisma.users.update({
+      where: { id: staffId },
+      data: { is_active: false },
+      select: {
+        id: true,
+        name: true,
+        is_active: true,
+      }
+    });
+
+    // Update their current status to off_shift if they are deactivated
+    await prisma.staff_current_status.updateMany({
+      where: { staff_id: staffId },
+      data: { availability: 'off_shift' }
+    });
+
+    return successResponse(res, updatedStaff, 'Delivery staff deactivated successfully');
   } catch (error) {
     next(error);
   }

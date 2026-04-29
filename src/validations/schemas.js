@@ -70,6 +70,24 @@ export const createDeliveryStaffSchema = z.object({
     password: requiredString('Password', 6),
     phone: z.string().optional().nullable(),
     employee_id: z.string().optional().nullable(),
+    is_active: z.preprocess(
+      (val) => (val === '' || val === null ? undefined : val),
+      z.coerce.boolean().optional()
+    ),
+  })
+});
+
+export const updateDeliveryStaffSchema = z.object({
+  body: z.object({
+    name: z.string().optional(),
+    email: z.string().email('Invalid email address').optional(),
+    password: z.string().min(6, 'Password must be at least 6 characters').optional(),
+    phone: z.string().optional().nullable(),
+    employee_id: z.string().optional().nullable(),
+    is_active: z.preprocess(
+      (val) => (val === '' || val === null ? undefined : val),
+      z.coerce.boolean().optional()
+    ),
   })
 });
 
