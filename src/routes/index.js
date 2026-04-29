@@ -12,6 +12,7 @@ import shiftRoutes from './shift.routes.js';
 import rejectionReasonRoutes from './rejectionReason.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
 import deliveryRoutes from './delivery.routes.js';
+import authMiddleware from '../middlewares/auth.middleware.js';
 import { restrictRole } from '../middlewares/permission.middleware.js';
 
 const router = Router();
@@ -21,20 +22,20 @@ const v1Router = Router();
 v1Router.use('/auth', authRoutes);
 v1Router.use('/delivery/tasks', deliveryRoutes);
 
-// Protect all admin/standard routes from delivery_staff
+// Protect all admin/standard routes
 const adminGate = restrictRole(['delivery_staff']);
 
-v1Router.use('/', adminGate, roleRoutes);
-v1Router.use('/users', adminGate, userRoutes);
-v1Router.use('/towers', adminGate, towerRoutes);
-v1Router.use('/floors', adminGate, floorRoutes);
-v1Router.use('/locations', adminGate, locationRoutes);
-v1Router.use('/staff-bays', adminGate, staffBayRoutes);
-v1Router.use('/tasks', adminGate, taskRoutes);
-v1Router.use('/staff', adminGate, staffRoutes);
-v1Router.use('/staff-shifts', adminGate, shiftRoutes);
-v1Router.use('/rejection-reasons', adminGate, rejectionReasonRoutes);
-v1Router.use('/dashboard', adminGate, dashboardRoutes);
+v1Router.use('/', authMiddleware, adminGate, roleRoutes);
+v1Router.use('/users', authMiddleware, adminGate, userRoutes);
+v1Router.use('/towers', authMiddleware, adminGate, towerRoutes);
+v1Router.use('/floors', authMiddleware, adminGate, floorRoutes);
+v1Router.use('/locations', authMiddleware, adminGate, locationRoutes);
+v1Router.use('/staff-bays', authMiddleware, adminGate, staffBayRoutes);
+v1Router.use('/tasks', authMiddleware, adminGate, taskRoutes);
+v1Router.use('/staff', authMiddleware, adminGate, staffRoutes);
+v1Router.use('/staff-shifts', authMiddleware, adminGate, shiftRoutes);
+v1Router.use('/rejection-reasons', authMiddleware, adminGate, rejectionReasonRoutes);
+v1Router.use('/dashboard', authMiddleware, adminGate, dashboardRoutes);
 
 // Main router
 router.use('/v1', v1Router);
