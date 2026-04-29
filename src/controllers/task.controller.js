@@ -458,72 +458,53 @@ export const updateTaskAgents = async (req, res, next) => {
     });
     if (!task) throw new ApiError('Task not found', 404);
 
-    const existingAgentIds = task.task_agents.map(a => a.staff_id);
-    const newAgentIds = agents.map(a => a.staff_id);
-
-    // 1. Identify removals
-    const removedStaffIds = existingAgentIds.filter(sid => !newAgentIds.includes(sid));
-
     await prisma.$transaction(async (tx) => {
-      // Handle Removals
-      if (removedStaffIds.length > 0) {
-        await tx.task_agents.deleteMany({
-          where: { task_id: taskId, staff_id: { in: removedStaffIds } }
-        });
-
-        // Log removal in timeline
-        for (const sid of removedStaffIds) {
-          await tx.task_timeline.create({
-            data: {
-              task_id: taskId,
-              event_type: 'staff_removed',
-              from_status: task.status,
-              to_status: task.status,
-              actor_id,
-              actor_type: 'admin',
-              staff_id: sid
-            }
-          });
-        }
-      }
-
-      // Handle Assignments (Add/Update)
       for (const agent of agents) {
-        // Check if this slot already has the same staff (to avoid resetting their status)
-        const existingSlot = task.task_agents.find(
-          a => a.slot_number === agent.slot_number
-        );
-        const isSameStaff = existingSlot && existingSlot.staff_id === agent.staff_id;
-        const isActiveAgent = existingSlot && ['accepted', 'picked_up'].includes(existingSlot.agent_status);
+        let targetSlot = agent.slot_number;
 
-        // Upsert Task Agent
+        // Smart Slotting: If no slot_number provided, find the next available one
+        if (!targetSlot) {
+          const usedSlots = task.task_agents.map(a => a.slot_number);
+          // Also check what we've already assigned in this loop
+          // (Simplified: for now we assume one assignment at a time or provided slots)
+          targetSlot = 1;
+          while (usedSlots.includes(targetSlot)) {
+            targetSlot++;
+          }
+        }
+
+        const existingAgent = task.task_agents.find(a => a.slot_number === targetSlot);
+        const isSameStaff = existingAgent && existingAgent.staff_id === agent.staff_id;
+        const isActiveAgent = existingAgent && ['accepted', 'picked_up'].includes(existingAgent.agent_status);
+
+        // Upsert Task Agent (Replace if slot exists, or create new)
         await tx.task_agents.upsert({
-          where: { task_id_slot_number: { task_id: taskId, slot_number: agent.slot_number } },
+          where: { task_id_slot_number: { task_id: taskId, slot_number: targetSlot } },
           create: {
             task_id: taskId,
             staff_id: agent.staff_id,
-            agent_label: agent.agent_label,
-            slot_number: agent.slot_number,
+            agent_label: agent.agent_label || 'Agent',
+            slot_number: targetSlot,
             assigned_by: actor_id,
             agent_status: 'pending'
           },
           update: {
             staff_id: agent.staff_id,
-            agent_label: agent.agent_label,
+            agent_label: agent.agent_label || existingAgent?.agent_label || 'Agent',
             assigned_by: actor_id,
-            // Preserve status if same staff is already accepted/picked_up
+            // Only reset to pending if it's a different staff member OR if the current agent isn't already active
             ...(isSameStaff && isActiveAgent ? {} : { agent_status: 'pending' })
           }
         });
 
-        // Only notify and start timer for genuinely new or changed assignments
+        // Only notify if it's a new assignment or a reassignment to this slot
         if (!isSameStaff || !isActiveAgent) {
           // Record History
           await tx.task_assignment_history.create({
             data: {
               task_id: taskId,
               staff_id: agent.staff_id,
-              slot_number: agent.slot_number,
+              slot_number: targetSlot,
               assigned_by: actor_id,
               assignment_round: 1,
               response: 'pending'
@@ -558,11 +539,13 @@ export const updateTaskAgents = async (req, res, next) => {
         }
       }
 
-      // Update Task Status to delivery_assigned
-      await tx.tasks.update({
-        where: { id: taskId },
-        data: { status: 'delivery_assigned', updated_at: new Date() }
-      });
+      // Update Task Status to delivery_assigned if not already
+      if (task.status === 'new' || task.status === 'delivery_reassigned') {
+        await tx.tasks.update({
+          where: { id: taskId },
+          data: { status: 'delivery_assigned', updated_at: new Date() }
+        });
+      }
     });
 
     return successResponse(res, null, 'Agents updated successfully');

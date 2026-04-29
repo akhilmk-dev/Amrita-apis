@@ -213,7 +213,7 @@ export const assignAgentsSchema = z.object({
     agents: z.array(z.object({
       staff_id: z.number().int(),
       agent_label: z.string().optional(),
-      slot_number: z.number().int().default(1)
+      slot_number: z.number().int().optional()
     })).min(1, 'At least one agent must be assigned')
   }),
 });
