@@ -129,9 +129,7 @@ const performLogin = async (email, password, expectedRoleKeys = null) => {
 export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) {
-      throw new ApiError('Email and password are required', 400);
-    }
+
 
     // Standard login allows all active staff, but we could restrict here too if needed
     const result = await performLogin(email, password); 
@@ -165,9 +163,7 @@ export const login = async (req, res, next) => {
 export const loginDelivery = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) {
-      throw new ApiError('Email and password are required', 400);
-    }
+
 
     // Strictly enforce delivery_staff role_key
     const result = await performLogin(email, password, ['delivery_staff']);
@@ -201,9 +197,7 @@ export const loginDelivery = async (req, res, next) => {
 export const refreshToken = async (req, res, next) => {
   try {
     const { refreshToken } = req.body;
-    if (!refreshToken) {
-      throw new ApiError('Refresh token is required', 400);
-    }
+
 
     const decoded = verifyRefreshToken(refreshToken);
     if (!decoded) {

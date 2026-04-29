@@ -1,6 +1,8 @@
 import bcrypt from 'bcryptjs';
 import prisma from '../config/prisma.js';
 import { successResponse, ApiError } from '../utils/response.utils.js';
+import { getPaginationParams, getPaginatedResponse } from '../utils/pagination.utils.js';
+import { createAuditLog } from '../utils/audit.utils.js';
 
 /**
  * @swagger
@@ -26,14 +28,21 @@ import { successResponse, ApiError } from '../utils/response.utils.js';
  */
 export const getAllUsers = async (req, res, next) => {
   try {
-    const users = await prisma.users.findMany({
-      include: {
-        role: true
-      },
-      orderBy: {
-        created_at: 'desc'
-      }
-    });
+    const { page, limit, skip } = getPaginationParams(req.query);
+
+    const [count, users] = await Promise.all([
+      prisma.users.count(),
+      prisma.users.findMany({
+        skip,
+        take: limit,
+        include: {
+          role: true
+        },
+        orderBy: {
+          created_at: 'desc'
+        }
+      })
+    ]);
 
     // Remove password_hash from response
     const formattedUsers = users.map(user => {
@@ -41,7 +50,14 @@ export const getAllUsers = async (req, res, next) => {
       return rest;
     });
 
-    return successResponse(res, formattedUsers, 'Users retrieved successfully');
+    const response = getPaginatedResponse({
+      count,
+      page,
+      limit,
+      data: formattedUsers
+    });
+
+    return successResponse(res, response, 'Users retrieved successfully');
   } catch (error) {
     next(error);
   }
@@ -76,10 +92,6 @@ export const createUser = async (req, res, next) => {
   try {
     const { name, email, password, role_id, phone, employee_id } = req.body;
 
-    if (!name || !email || !password || !role_id) {
-      throw new ApiError('Missing required fields', 400);
-    }
-
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = await prisma.users.create({
@@ -91,15 +103,34 @@ export const createUser = async (req, res, next) => {
         phone,
         employee_id,
         is_active: true
+      },
+      include: {
+        role: true
       }
     });
 
-    const { password_hash, ...rest } = newUser;
-    return successResponse(res, rest, 'User created successfully', 201);
+    const response = {
+      id: newUser.id,
+      name: newUser.name,
+      email: newUser.email,
+      role_id: newUser.role_id,
+      is_active: newUser.is_active,
+      created_at: newUser.created_at,
+      role: newUser.role,
+    };
+
+    // Create Audit Log
+    await createAuditLog({
+      req,
+      action: 'add',
+      entityType: 'users',
+      entityId: newUser.id,
+      newValue: response,
+      meta: response
+    });
+
+    return successResponse(res, response, 'User created successfully', 201);
   } catch (error) {
-    if (error.code === 'P2002') {
-      return next(new ApiError('Email or Employee ID already exists', 400));
-    }
     next(error);
   }
 };
@@ -111,6 +142,12 @@ export const updateUser = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { name, email, password, role_id, phone, employee_id, is_active } = req.body;
+
+    // Get old value for audit
+    const oldUser = await prisma.users.findUnique({ 
+      where: { id: parseInt(id) },
+      select: { id: true, name: true, email: true, role_id: true, is_active: true }
+    });
 
     const data = {
       name,
@@ -127,15 +164,35 @@ export const updateUser = async (req, res, next) => {
 
     const updatedUser = await prisma.users.update({
       where: { id: parseInt(id) },
-      data
+      data,
+      include: {
+        role: true,
+      },
     });
 
-    const { password_hash, ...rest } = updatedUser;
-    return successResponse(res, rest, 'User updated successfully');
+    const response = {
+      id: updatedUser.id,
+      name: updatedUser.name,
+      email: updatedUser.email,
+      role_id: updatedUser.role_id,
+      is_active: updatedUser.is_active,
+      updated_at: updatedUser.updated_at,
+      role: updatedUser.role,
+    };
+
+    // Create Audit Log
+    await createAuditLog({
+      req,
+      action: 'edit',
+      entityType: 'users',
+      entityId: parseInt(id),
+      oldValue: oldUser,
+      newValue: response,
+      meta: response
+    });
+
+    return successResponse(res, response, 'User updated successfully');
   } catch (error) {
-    if (error.code === 'P2002') {
-      return next(new ApiError('Email or Employee ID already exists', 400));
-    }
     next(error);
   }
 };
@@ -149,6 +206,15 @@ export const deleteUser = async (req, res, next) => {
     await prisma.users.update({
       where: { id: parseInt(id) },
       data: { is_active: false }
+    });
+
+    // Create Audit Log
+    await createAuditLog({
+      req,
+      action: 'delete',
+      entityType: 'users',
+      entityId: parseInt(id),
+      meta: { message: 'User deactivated' }
     });
 
     return successResponse(res, null, 'User deactivated successfully');

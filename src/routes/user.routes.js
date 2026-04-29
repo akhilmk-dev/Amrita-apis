@@ -2,6 +2,8 @@ import { Router } from 'express';
 import * as userController from '../controllers/user.controller.js';
 import authMiddleware from '../middlewares/auth.middleware.js';
 import { checkPermission } from '../middlewares/permission.middleware.js';
+import { validate } from '../middlewares/validate.middleware.js';
+import { createUserSchema, updateUserSchema, paginationQuerySchema } from '../validations/schemas.js';
 
 const router = Router();
 
@@ -20,9 +22,40 @@ const router = Router();
  *     tags: [Admin Panel]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of items per page
  *     responses:
  *       200:
- *         description: List of users
+ *         description: List of users with pagination metadata
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     items:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/User'
+ *                     meta:
+ *                       $ref: '#/components/schemas/PaginationMeta'
  *   post:
  *     summary: Create a new user
  *     tags: [Admin Panel]
@@ -55,8 +88,8 @@ const router = Router();
  *       201:
  *         description: User created successfully
  */
-router.get('/', authMiddleware, checkPermission('users', 'view'), userController.getAllUsers);
-router.post('/', authMiddleware, checkPermission('users', 'manage'), userController.createUser);
+router.get('/', authMiddleware, checkPermission('users', 'view'), validate(paginationQuerySchema), userController.getAllUsers);
+router.post('/', authMiddleware, checkPermission('users', 'manage'), validate(createUserSchema), userController.createUser);
 
 /**
  * @swagger
@@ -126,7 +159,7 @@ router.post('/', authMiddleware, checkPermission('users', 'manage'), userControl
  *         description: User deactivated successfully
  */
 router.get('/:id', authMiddleware, checkPermission('users', 'view'), userController.getUserById);
-router.put('/:id', authMiddleware, checkPermission('users', 'manage'), userController.updateUser);
+router.put('/:id', authMiddleware, checkPermission('users', 'manage'), validate(updateUserSchema), userController.updateUser);
 router.delete('/:id', authMiddleware, checkPermission('users', 'manage'), userController.deleteUser);
 
 export default router;

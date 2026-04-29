@@ -26,6 +26,18 @@ const options = {
           bearerFormat: 'JWT',
         },
       },
+      schemas: {
+        PaginationMeta: {
+          type: 'object',
+          properties: {
+            totalItems: { type: 'integer' },
+            itemCount: { type: 'integer' },
+            itemsPerPage: { type: 'integer' },
+            totalPages: { type: 'integer' },
+            currentPage: { type: 'integer' }
+          }
+        }
+      }
     },
   },
   apis: ['./src/routes/*.js', './src/controllers/*.js'], // Path to the API docs

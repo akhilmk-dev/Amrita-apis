@@ -1,5 +1,7 @@
 import express from 'express';
 import { login, loginDelivery, refreshToken } from '../controllers/auth.controller.js';
+import { validate } from '../middlewares/validate.middleware.js';
+import { loginSchema, refreshTokenSchema } from '../validations/schemas.js';
 
 const router = express.Router();
 
@@ -11,12 +13,12 @@ const router = express.Router();
  */
 
 // Staff Login
-router.post('/login', login);
+router.post('/login', validate(loginSchema), login);
 
 // Delivery Staff Login
-router.post('/login/delivery', loginDelivery);
+router.post('/login/delivery', validate(loginSchema), loginDelivery);
 
 // Refresh token endpoint
-router.post('/refresh', refreshToken);
+router.post('/refresh', validate(refreshTokenSchema), refreshToken);
 
 export default router;

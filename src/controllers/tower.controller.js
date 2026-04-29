@@ -1,5 +1,7 @@
 import prisma from '../config/prisma.js';
 import { successResponse, ApiError } from '../utils/response.utils.js';
+import { getPaginationParams, getPaginatedResponse } from '../utils/pagination.utils.js';
+import { createAuditLog } from '../utils/audit.utils.js';
 
 /**
  * @swagger
@@ -23,10 +25,25 @@ import { successResponse, ApiError } from '../utils/response.utils.js';
  */
 export const getAllTowers = async (req, res, next) => {
   try {
-    const towers = await prisma.towers.findMany({
-      orderBy: { sort_order: 'asc' }
+    const { page, limit, skip } = getPaginationParams(req.query);
+
+    const [count, towers] = await Promise.all([
+      prisma.towers.count(),
+      prisma.towers.findMany({
+        skip,
+        take: limit,
+        orderBy: { sort_order: 'asc' }
+      })
+    ]);
+
+    const response = getPaginatedResponse({
+      count,
+      page,
+      limit,
+      data: towers
     });
-    return successResponse(res, towers, 'Towers retrieved successfully');
+
+    return successResponse(res, response, 'Towers retrieved successfully');
   } catch (error) {
     next(error);
   }
@@ -59,10 +76,6 @@ export const createTower = async (req, res, next) => {
   try {
     const { name, code, sort_order } = req.body;
 
-    if (!name || !code) {
-      throw new ApiError('Name and code are required', 400);
-    }
-
     const newTower = await prisma.towers.create({
       data: {
         name,
@@ -72,11 +85,18 @@ export const createTower = async (req, res, next) => {
       }
     });
 
+    // Create Audit Log
+    await createAuditLog({
+      req,
+      action: 'add',
+      entityType: 'towers',
+      entityId: newTower.id,
+      newValue: newTower,
+      meta: newTower
+    });
+
     return successResponse(res, newTower, 'Tower created successfully', 201);
   } catch (error) {
-    if (error.code === 'P2002') {
-      return next(new ApiError('Tower code already exists', 400));
-    }
     next(error);
   }
 };
@@ -89,6 +109,9 @@ export const updateTower = async (req, res, next) => {
     const { id } = req.params;
     const { name, code, sort_order, is_active } = req.body;
 
+    // Get old value for audit
+    const oldTower = await prisma.towers.findUnique({ where: { id: parseInt(id) } });
+
     const updatedTower = await prisma.towers.update({
       where: { id: parseInt(id) },
       data: {
@@ -99,11 +122,19 @@ export const updateTower = async (req, res, next) => {
       }
     });
 
+    // Create Audit Log
+    await createAuditLog({
+      req,
+      action: 'edit',
+      entityType: 'towers',
+      entityId: id,
+      oldValue: oldTower,
+      newValue: updatedTower,
+      meta: updatedTower
+    });
+
     return successResponse(res, updatedTower, 'Tower updated successfully');
   } catch (error) {
-    if (error.code === 'P2002') {
-      return next(new ApiError('Tower code already exists', 400));
-    }
     next(error);
   }
 };
@@ -117,6 +148,15 @@ export const deleteTower = async (req, res, next) => {
     await prisma.towers.update({
       where: { id: parseInt(id) },
       data: { is_active: false }
+    });
+
+    // Create Audit Log
+    await createAuditLog({
+      req,
+      action: 'delete',
+      entityType: 'towers',
+      entityId: id,
+      meta: { message: 'Tower deactivated' }
     });
 
     return successResponse(res, null, 'Tower deactivated successfully');
