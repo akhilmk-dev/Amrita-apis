@@ -1,5 +1,6 @@
 import prisma from '../config/prisma.js';
 import { successResponse, ApiError } from '../utils/response.utils.js';
+import { getPaginationParams, getPaginatedResponse } from '../utils/pagination.utils.js';
 import bcrypt from 'bcryptjs';
 
 /**
