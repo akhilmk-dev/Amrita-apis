@@ -1,5 +1,6 @@
 import prisma from '../config/prisma.js';
-import { successResponse } from '../utils/response.utils.js';
+import { successResponse, ApiError } from '../utils/response.utils.js';
+import bcrypt from 'bcryptjs';
 
 /**
  * Get all available delivery staff
@@ -105,6 +106,63 @@ export const getAllDeliveryStaff = async (req, res, next) => {
     });
 
     return successResponse(res, response, 'Delivery agents retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Create a new delivery staff
+ */
+export const createDeliveryStaff = async (req, res, next) => {
+  try {
+    const { name, email, password, phone, employee_id } = req.body;
+
+    // Get delivery_staff role id
+    const role = await prisma.roles.findUnique({
+      where: { role_key: 'delivery_staff' }
+    });
+    
+    if (!role) {
+      throw new ApiError('Delivery staff role not found in system', 500);
+    }
+
+    // Check if email or employee_id exists
+    if (email) {
+      const emailExists = await prisma.users.findUnique({ where: { email } });
+      if (emailExists) throw new ApiError('Email already exists', 400);
+    }
+
+    if (employee_id) {
+      const empIdExists = await prisma.users.findUnique({ where: { employee_id } });
+      if (empIdExists) throw new ApiError('Employee ID already exists', 400);
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const password_hash = await bcrypt.hash(password, salt);
+
+    const newStaff = await prisma.users.create({
+      data: {
+        name,
+        email,
+        password_hash,
+        role_id: role.id,
+        phone,
+        employee_id,
+        is_active: true
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        employee_id: true,
+        is_active: true,
+        created_at: true
+      }
+    });
+
+    return successResponse(res, newStaff, 'Delivery staff created successfully', 201);
   } catch (error) {
     next(error);
   }

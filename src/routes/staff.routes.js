@@ -3,7 +3,7 @@ import * as staffController from '../controllers/staff.controller.js';
 import authMiddleware from '../middlewares/auth.middleware.js';
 import { checkPermission } from '../middlewares/permission.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { paginationQuerySchema } from '../validations/schemas.js';
+import { paginationQuerySchema, createDeliveryStaffSchema } from '../validations/schemas.js';
 
 const router = Router();
 
@@ -56,5 +56,45 @@ const router = Router();
 router.get('/delivery-agents', authMiddleware, checkPermission('staff', 'view'), validate(paginationQuerySchema), staffController.getAllDeliveryStaff);
 
 router.get('/available', authMiddleware, checkPermission('staff', 'view'), staffController.getAvailableStaff);
+
+/**
+ * @swagger
+ * /api/v1/staff:
+ *   post:
+ *     summary: Create a new delivery staff
+ *     tags: [Staff]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - email
+ *               - password
+ *             properties:
+ *               name:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *               phone:
+ *                 type: string
+ *               employee_id:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Delivery staff created successfully
+ *       400:
+ *         description: Validation error or Email/Employee ID exists
+ *       403:
+ *         description: Forbidden
+ */
+router.post('/', authMiddleware, checkPermission('staff', 'create'), validate(createDeliveryStaffSchema), staffController.createDeliveryStaff);
 
 export default router;

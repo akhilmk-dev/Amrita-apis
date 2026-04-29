@@ -63,6 +63,16 @@ export const createUserSchema = z.object({
   })
 });
 
+export const createDeliveryStaffSchema = z.object({
+  body: z.object({
+    name: requiredString('Name'),
+    email: requiredEmail(),
+    password: requiredString('Password', 6),
+    phone: z.string().optional().nullable(),
+    employee_id: z.string().optional().nullable(),
+  })
+});
+
 export const updateUserSchema = z.object({
   body: z.object({
     name: z.string().optional(),
