@@ -14,8 +14,12 @@ const options = {
     },
     servers: [
       {
-        url: 'http://localhost:5000',
-        description: 'Development server',
+        url: process.env.API_URL || 'http://localhost:5000',
+        description: 'Current environment server',
+      },
+      {
+        url: 'https://amrita-apis.onrender.com',
+        description: 'Production server (Render)',
       },
     ],
     components: {

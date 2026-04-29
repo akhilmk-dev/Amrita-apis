@@ -12,9 +12,21 @@ dotenv.config();
 
 const app = express();
 
+// Trust proxy for Render/Proxies
+app.set('trust proxy', 1);
+
 // Middlewares
-app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: '*', // For development. For production, specify your frontend URL
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  credentials: true
+}));
+
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable CSP for Swagger UI if needed, or configure it properly
+}));
+
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
