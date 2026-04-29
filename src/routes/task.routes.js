@@ -252,7 +252,7 @@ const router = Router();
  *
  * /api/v1/tasks/{id}/reject:
  *   post:
- *     summary: Reject a task assignment (Staff)
+ *     summary: Reject a task assignment (Admin/Super Admin)
  *     tags: [Tasks]
  *     security:
  *       - bearerAuth: []
@@ -278,7 +278,7 @@ const router = Router();
  *
  * /api/v1/tasks/{id}/accept:
  *   post:
- *     summary: Accept a task assignment (Staff)
+ *     summary: Accept a task assignment (Admin/Super Admin)
  *     tags: [Tasks]
  *     security:
  *       - bearerAuth: []
@@ -294,7 +294,7 @@ const router = Router();
  *
  * /api/v1/tasks/{id}/pickup:
  *   post:
- *     summary: Mark task as picked up (Staff)
+ *     summary: Mark task as picked up (Admin/Super Admin)
  *     tags: [Tasks]
  *     security:
  *       - bearerAuth: []
@@ -310,7 +310,7 @@ const router = Router();
  *
  * /api/v1/tasks/{id}/complete:
  *   post:
- *     summary: Mark task as completed/delivered (Staff)
+ *     summary: Mark task as completed/delivered (Admin/Super Admin)
  *     tags: [Tasks]
  *     security:
  *       - bearerAuth: []
@@ -330,10 +330,10 @@ router.post('/', authMiddleware, checkPermission('tasks', 'create'), validate(ta
 router.get('/', authMiddleware, checkPermission('tasks', 'view'), validate(taskQuerySchema), taskController.getAllTasks);
 router.get('/:id', authMiddleware, checkPermission('tasks', 'view'), taskController.getTaskById);
 router.post('/:id/agents', authMiddleware, checkPermission('tasks', 'assign'), validate(assignAgentsSchema), taskController.updateTaskAgents);
-router.post('/:id/reject', authMiddleware, taskController.rejectTask);
-router.post('/:id/accept', authMiddleware, taskController.acceptTask);
-router.post('/:id/pickup', authMiddleware, taskController.pickupTask);
-router.post('/:id/complete', authMiddleware, taskController.completeTask);
+router.post('/:id/reject', authMiddleware, checkPermission('tasks', 'update_status'), taskController.rejectTask);
+router.post('/:id/accept', authMiddleware, checkPermission('tasks', 'update_status'), taskController.acceptTask);
+router.post('/:id/pickup', authMiddleware, checkPermission('tasks', 'update_status'), taskController.pickupTask);
+router.post('/:id/complete', authMiddleware, checkPermission('tasks', 'update_status'), taskController.completeTask);
 router.put('/:id', authMiddleware, checkPermission('tasks', 'update_status'), validate(updateTaskSchema), taskController.updateTask);
 router.delete('/:id', authMiddleware, checkPermission('tasks', 'cancel'), taskController.deleteTask);
 

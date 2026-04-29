@@ -53,7 +53,7 @@ const router = Router();
  *       200:
  *         description: List of delivery agents with status
  */
-router.get('/delivery-agents', authMiddleware, checkPermission('users', 'view'), validate(paginationQuerySchema), staffController.getAllDeliveryStaff);
+router.get('/delivery-agents', authMiddleware, checkPermission('staff', 'view'), validate(paginationQuerySchema), staffController.getAllDeliveryStaff);
 
 router.get('/available', authMiddleware, checkPermission('staff', 'view'), staffController.getAvailableStaff);
 

@@ -11,23 +11,30 @@ import staffRoutes from './staff.routes.js';
 import shiftRoutes from './shift.routes.js';
 import rejectionReasonRoutes from './rejectionReason.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
+import deliveryRoutes from './delivery.routes.js';
+import { restrictRole } from '../middlewares/permission.middleware.js';
 
 const router = Router();
 const v1Router = Router();
 
 // v1 Routes
 v1Router.use('/auth', authRoutes);
-v1Router.use('/', roleRoutes);
-v1Router.use('/users', userRoutes);
-v1Router.use('/towers', towerRoutes);
-v1Router.use('/floors', floorRoutes);
-v1Router.use('/locations', locationRoutes);
-v1Router.use('/staff-bays', staffBayRoutes);
-v1Router.use('/tasks', taskRoutes);
-v1Router.use('/staff', staffRoutes);
-v1Router.use('/staff-shifts', shiftRoutes);
-v1Router.use('/rejection-reasons', rejectionReasonRoutes);
-v1Router.use('/dashboard', dashboardRoutes);
+v1Router.use('/delivery/tasks', deliveryRoutes);
+
+// Protect all admin/standard routes from delivery_staff
+const adminGate = restrictRole(['delivery_staff']);
+
+v1Router.use('/', adminGate, roleRoutes);
+v1Router.use('/users', adminGate, userRoutes);
+v1Router.use('/towers', adminGate, towerRoutes);
+v1Router.use('/floors', adminGate, floorRoutes);
+v1Router.use('/locations', adminGate, locationRoutes);
+v1Router.use('/staff-bays', adminGate, staffBayRoutes);
+v1Router.use('/tasks', adminGate, taskRoutes);
+v1Router.use('/staff', adminGate, staffRoutes);
+v1Router.use('/staff-shifts', adminGate, shiftRoutes);
+v1Router.use('/rejection-reasons', adminGate, rejectionReasonRoutes);
+v1Router.use('/dashboard', adminGate, dashboardRoutes);
 
 // Main router
 router.use('/v1', v1Router);

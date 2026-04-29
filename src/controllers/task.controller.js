@@ -518,6 +518,18 @@ export const acceptTask = async (req, res, next) => {
     const { id } = req.params;
     const staff_id = req.user?.user_id;
     const taskId = parseInt(id);
+    const userPermissions = req.user?.permissions || [];
+    const isAdmin = userPermissions.includes('tasks.update_status');
+
+    // Ownership/Permission Check
+    if (!isAdmin) {
+      const isAssigned = await prisma.task_agents.findFirst({
+        where: { task_id: taskId, staff_id: staff_id }
+      });
+      if (!isAssigned) {
+        throw new ApiError('Unauthorized. This task is not assigned to you.', 403);
+      }
+    }
 
     await prisma.$transaction(async (tx) => {
       // 1. Update Agent Status
@@ -580,6 +592,18 @@ export const pickupTask = async (req, res, next) => {
     const { id } = req.params;
     const staff_id = req.user?.user_id;
     const taskId = parseInt(id);
+    const userPermissions = req.user?.permissions || [];
+    const isAdmin = userPermissions.includes('tasks.update_status');
+
+    // Ownership/Permission Check
+    if (!isAdmin) {
+      const isAssigned = await prisma.task_agents.findFirst({
+        where: { task_id: taskId, staff_id: staff_id }
+      });
+      if (!isAssigned) {
+        throw new ApiError('Unauthorized. This task is not assigned to you.', 403);
+      }
+    }
 
     await prisma.$transaction(async (tx) => {
       // 1. Update Agent Status
@@ -630,6 +654,18 @@ export const completeTask = async (req, res, next) => {
     const { id } = req.params;
     const staff_id = req.user?.user_id;
     const taskId = parseInt(id);
+    const userPermissions = req.user?.permissions || [];
+    const isAdmin = userPermissions.includes('tasks.update_status');
+
+    // Ownership/Permission Check
+    if (!isAdmin) {
+      const isAssigned = await prisma.task_agents.findFirst({
+        where: { task_id: taskId, staff_id: staff_id }
+      });
+      if (!isAssigned) {
+        throw new ApiError('Unauthorized. This task is not assigned to you.', 403);
+      }
+    }
 
     await prisma.$transaction(async (tx) => {
       // 1. Update Agent Status
@@ -715,8 +751,19 @@ export const rejectTask = async (req, res, next) => {
     const { id } = req.params;
     const { rejection_reason_id, rejection_notes } = req.body;
     const staff_id = req.user?.user_id;
-
     const taskId = parseInt(id);
+    const userPermissions = req.user?.permissions || [];
+    const isAdmin = userPermissions.includes('tasks.update_status');
+
+    // 1. Ownership/Permission Check
+    if (!isAdmin) {
+      const isAssigned = await prisma.task_agents.findFirst({
+        where: { task_id: taskId, staff_id: staff_id }
+      });
+      if (!isAssigned) {
+        throw new ApiError('Unauthorized. This task is not assigned to you.', 403);
+      }
+    }
 
     await prisma.$transaction(async (tx) => {
       // 1. Mark as rejected in task_agents

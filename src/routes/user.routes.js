@@ -88,8 +88,8 @@ const router = Router();
  *       201:
  *         description: User created successfully
  */
-router.get('/', authMiddleware, checkPermission('users', 'view'), validate(paginationQuerySchema), userController.getAllUsers);
-router.post('/', authMiddleware, checkPermission('users', 'manage'), validate(createUserSchema), userController.createUser);
+router.get('/', authMiddleware, checkPermission('staff', 'view'), validate(paginationQuerySchema), userController.getAllUsers);
+router.post('/', authMiddleware, checkPermission('staff', 'manage'), validate(createUserSchema), userController.createUser);
 
 /**
  * @swagger
@@ -158,8 +158,8 @@ router.post('/', authMiddleware, checkPermission('users', 'manage'), validate(cr
  *       200:
  *         description: User deactivated successfully
  */
-router.get('/:id', authMiddleware, checkPermission('users', 'view'), userController.getUserById);
-router.put('/:id', authMiddleware, checkPermission('users', 'manage'), validate(updateUserSchema), userController.updateUser);
-router.delete('/:id', authMiddleware, checkPermission('users', 'manage'), userController.deleteUser);
+router.get('/:id', authMiddleware, checkPermission('staff', 'view'), userController.getUserById);
+router.put('/:id', authMiddleware, checkPermission('staff', 'manage'), validate(updateUserSchema), userController.updateUser);
+router.delete('/:id', authMiddleware, checkPermission('staff', 'manage'), userController.deleteUser);
 
 export default router;

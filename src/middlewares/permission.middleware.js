@@ -44,3 +44,23 @@ export const checkPermission = (module, action) => {
     }
   };
 };
+
+/**
+ * Role Restriction Middleware
+ * Prevents specific roles from accessing a route.
+ * 
+ * @param {string[]} excludedRoles - Array of role_keys to exclude
+ */
+export const restrictRole = (excludedRoles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return next(new ApiError('Authentication required', 401));
+    }
+
+    if (excludedRoles.includes(req.user.role_key)) {
+      return next(new ApiError(`Access denied. Role '${req.user.role_key}' is not allowed to access this resource.`, 403));
+    }
+
+    next();
+  };
+};
