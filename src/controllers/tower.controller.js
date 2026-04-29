@@ -140,14 +140,19 @@ export const updateTower = async (req, res, next) => {
 };
 
 /**
- * Delete tower (Soft delete)
+ * Delete tower (Hard delete with dependency check)
  */
 export const deleteTower = async (req, res, next) => {
   try {
     const { id } = req.params;
-    await prisma.towers.update({
-      where: { id: parseInt(id) },
-      data: { is_active: false }
+    const towerId = parseInt(id);
+
+    // Get tower info before deletion for audit log
+    const tower = await prisma.towers.findUnique({ where: { id: towerId } });
+    if (!tower) throw new ApiError('Tower not found', 404);
+
+    await prisma.towers.delete({
+      where: { id: towerId }
     });
 
     // Create Audit Log
@@ -155,12 +160,15 @@ export const deleteTower = async (req, res, next) => {
       req,
       action: 'delete',
       entityType: 'towers',
-      entityId: id,
-      meta: { message: 'Tower deactivated' }
+      entityId: towerId,
+      meta: { message: 'Tower deleted', deletedTower: tower }
     });
 
-    return successResponse(res, null, 'Tower deactivated successfully');
+    return successResponse(res, null, 'Tower deleted successfully');
   } catch (error) {
+    if (error.code === 'P2003') {
+      return next(new ApiError("can't delete dependencies found", 400));
+    }
     next(error);
   }
 };

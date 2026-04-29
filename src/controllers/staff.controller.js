@@ -260,9 +260,9 @@ export const updateDeliveryStaff = async (req, res, next) => {
 };
 
 /**
- * Deactivate (soft delete) a delivery staff
+ * Delete delivery staff (Hard delete with dependency check)
  */
-export const deactivateDeliveryStaff = async (req, res, next) => {
+export const deleteDeliveryStaff = async (req, res, next) => {
   try {
     const { id } = req.params;
     const staffId = parseInt(id);
@@ -277,24 +277,15 @@ export const deactivateDeliveryStaff = async (req, res, next) => {
       throw new ApiError('Delivery staff not found', 404);
     }
 
-    const updatedStaff = await prisma.users.update({
-      where: { id: staffId },
-      data: { is_active: false },
-      select: {
-        id: true,
-        name: true,
-        is_active: true,
-      }
+    await prisma.users.delete({
+      where: { id: staffId }
     });
 
-    // Update their current status to off_shift if they are deactivated
-    await prisma.staff_current_status.updateMany({
-      where: { staff_id: staffId },
-      data: { availability: 'off_shift' }
-    });
-
-    return successResponse(res, updatedStaff, 'Delivery staff deactivated successfully');
+    return successResponse(res, null, 'Delivery staff deleted successfully');
   } catch (error) {
+    if (error.code === 'P2003') {
+      return next(new ApiError("can't delete dependencies found", 400));
+    }
     next(error);
   }
 };

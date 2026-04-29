@@ -212,7 +212,8 @@ router.get('/list', authMiddleware, checkPermission('locations', 'view'), locati
  *       404:
  *         description: Location or Floor not found
  *   delete:
- *     summary: Delete/Deactivate location
+ *     summary: Delete location (Hard delete)
+ *     description: Deletes the location record. Will fail if location is used in tasks.
  *     tags: [Admin Panel]
  *     security:
  *       - bearerAuth: []
@@ -225,7 +226,7 @@ router.get('/list', authMiddleware, checkPermission('locations', 'view'), locati
  *         description: Location ID
  *     responses:
  *       200:
- *         description: Location deactivated successfully
+ *         description: Location deleted successfully
  *         content:
  *           application/json:
  *             schema:
@@ -236,10 +237,12 @@ router.get('/list', authMiddleware, checkPermission('locations', 'view'), locati
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: "Location deactivated successfully"
+ *                   example: "Location deleted successfully"
  *                 data:
  *                   type: object
  *                   nullable: true
+ *       400:
+ *         description: can't delete dependencies found
  *       401:
  *         description: Unauthorized
  *       403:

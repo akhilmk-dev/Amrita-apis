@@ -226,14 +226,19 @@ export const updateBay = async (req, res, next) => {
 };
 
 /**
- * Delete staff bay (Soft delete)
+ * Delete staff bay (Hard delete with dependency check)
  */
 export const deleteBay = async (req, res, next) => {
   try {
     const { id } = req.params;
-    await prisma.staff_bays.update({
-      where: { id: parseInt(id) },
-      data: { is_active: false }
+    const bayId = parseInt(id);
+
+    // Get bay info before deletion for audit log
+    const bay = await prisma.staff_bays.findUnique({ where: { id: bayId } });
+    if (!bay) throw new ApiError('Staff bay not found', 404);
+
+    await prisma.staff_bays.delete({
+      where: { id: bayId }
     });
 
     // Create Audit Log
@@ -241,12 +246,15 @@ export const deleteBay = async (req, res, next) => {
       req,
       action: 'delete',
       entityType: 'staff_bays',
-      entityId: id,
-      meta: { message: 'Staff bay deactivated' }
+      entityId: bayId,
+      meta: { message: 'Staff bay deleted', deletedBay: bay }
     });
 
-    return successResponse(res, null, 'Staff bay deactivated successfully');
+    return successResponse(res, null, 'Staff bay deleted successfully');
   } catch (error) {
+    if (error.code === 'P2003') {
+      return next(new ApiError("can't delete dependencies found", 400));
+    }
     next(error);
   }
 };

@@ -156,7 +156,8 @@ router.post('/', authMiddleware, checkPermission('staff_bays', 'add'), validate(
  *                 data:
  *                   $ref: '#/components/schemas/StaffBay'
  *   delete:
- *     summary: Delete/Deactivate staff bay
+ *     summary: Delete staff bay (Hard delete)
+ *     description: Deletes the staff bay record. Will fail if bay has associated shift events.
  *     tags: [Staff Bays]
  *     security:
  *       - bearerAuth: []
@@ -168,7 +169,9 @@ router.post('/', authMiddleware, checkPermission('staff_bays', 'add'), validate(
  *           type: integer
  *     responses:
  *       200:
- *         description: Staff bay deactivated
+ *         description: Staff bay deleted successfully
+ *       400:
+ *         description: can't delete dependencies found
  */
 router.get('/:id', staffBayController.getBayById);
 router.put('/:id', authMiddleware, checkPermission('staff_bays', 'edit'), validate(staffBaySchema), staffBayController.updateBay);

@@ -155,7 +155,8 @@ router.put('/:id', authMiddleware, checkPermission('staff', 'edit'), uploadProfi
  * @swagger
  * /api/v1/staff/{id}:
  *   delete:
- *     summary: Deactivate (soft delete) a delivery staff
+ *     summary: Delete a delivery staff (Hard delete)
+ *     description: Deletes the staff record. Will fail if staff has associated task history.
  *     tags: [Staff]
  *     security:
  *       - bearerAuth: []
@@ -168,10 +169,12 @@ router.put('/:id', authMiddleware, checkPermission('staff', 'edit'), uploadProfi
  *         description: Staff ID
  *     responses:
  *       200:
- *         description: Delivery staff deactivated successfully
+ *         description: Delivery staff deleted successfully
+ *       400:
+ *         description: can't delete dependencies found
  *       404:
  *         description: Staff not found
  */
-router.delete('/:id', authMiddleware, checkPermission('staff', 'deactivate'), staffController.deactivateDeliveryStaff);
+router.delete('/:id', authMiddleware, checkPermission('staff', 'deactivate'), staffController.deleteDeliveryStaff);
 
 export default router;

@@ -159,7 +159,8 @@ router.post('/', authMiddleware, checkPermission('staff', 'manage'), uploadProfi
  *       404:
  *         description: User not found
  *   delete:
- *     summary: Delete/Deactivate user
+ *     summary: Delete user (Hard delete)
+ *     description: Deletes the user record. Will fail if user has dependencies.
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
@@ -171,7 +172,9 @@ router.post('/', authMiddleware, checkPermission('staff', 'manage'), uploadProfi
  *           type: integer
  *     responses:
  *       200:
- *         description: User deactivated successfully
+ *         description: User deleted successfully
+ *       400:
+ *         description: can't delete dependencies found
  */
 router.get('/:id', authMiddleware, checkPermission('staff', 'view'), userController.getUserById);
 router.put('/:id', authMiddleware, checkPermission('staff', 'manage'), uploadProfileImage.single('profile_image'), validate(updateUserSchema), userController.updateUser);

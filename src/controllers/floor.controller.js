@@ -195,14 +195,19 @@ export const updateFloor = async (req, res, next) => {
 };
 
 /**
- * Delete floor (Soft delete)
+ * Delete floor (Hard delete with dependency check)
  */
 export const deleteFloor = async (req, res, next) => {
   try {
     const { id } = req.params;
-    await prisma.floors.update({
-      where: { id: parseInt(id) },
-      data: { is_active: false }
+    const floorId = parseInt(id);
+
+    // Get floor info before deletion for audit log
+    const floor = await prisma.floors.findUnique({ where: { id: floorId } });
+    if (!floor) throw new ApiError('Floor not found', 404);
+
+    await prisma.floors.delete({
+      where: { id: floorId }
     });
 
     // Create Audit Log
@@ -210,12 +215,15 @@ export const deleteFloor = async (req, res, next) => {
       req,
       action: 'delete',
       entityType: 'floors',
-      entityId: id,
-      meta: { message: 'Floor deactivated' }
+      entityId: floorId,
+      meta: { message: 'Floor deleted', deletedFloor: floor }
     });
 
-    return successResponse(res, null, 'Floor deactivated successfully');
+    return successResponse(res, null, 'Floor deleted successfully');
   } catch (error) {
+    if (error.code === 'P2003') {
+      return next(new ApiError("can't delete dependencies found", 400));
+    }
     next(error);
   }
 };

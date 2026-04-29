@@ -217,14 +217,19 @@ export const updateUser = async (req, res, next) => {
 };
 
 /**
- * Delete user (Soft delete by deactivating)
+ * Delete user (Hard delete with dependency check)
  */
 export const deleteUser = async (req, res, next) => {
   try {
     const { id } = req.params;
-    await prisma.users.update({
-      where: { id: parseInt(id) },
-      data: { is_active: false }
+    const userId = parseInt(id);
+
+    // Get user info before deletion for audit log
+    const user = await prisma.users.findUnique({ where: { id: userId } });
+    if (!user) throw new ApiError('User not found', 404);
+
+    await prisma.users.delete({
+      where: { id: userId }
     });
 
     // Create Audit Log
@@ -232,12 +237,15 @@ export const deleteUser = async (req, res, next) => {
       req,
       action: 'delete',
       entityType: 'users',
-      entityId: parseInt(id),
-      meta: { message: 'User deactivated' }
+      entityId: userId,
+      meta: { message: 'User deleted', deletedUser: user }
     });
 
-    return successResponse(res, null, 'User deactivated successfully');
+    return successResponse(res, null, 'User deleted successfully');
   } catch (error) {
+    if (error.code === 'P2003') {
+      return next(new ApiError("can't delete dependencies found", 400));
+    }
     next(error);
   }
 };

@@ -177,7 +177,8 @@ router.post('/', authMiddleware, checkPermission('floors', 'add'), validate(floo
  *       404:
  *         description: Floor or Tower not found
  *   delete:
- *     summary: Delete/Deactivate floor
+ *     summary: Delete floor (Hard delete)
+ *     description: Deletes the floor record. Will fail if floor has associated locations or bays.
  *     tags: [Admin Panel]
  *     security:
  *       - bearerAuth: []
@@ -190,7 +191,7 @@ router.post('/', authMiddleware, checkPermission('floors', 'add'), validate(floo
  *         description: Floor ID
  *     responses:
  *       200:
- *         description: Floor deactivated successfully
+ *         description: Floor deleted successfully
  *         content:
  *           application/json:
  *             schema:
@@ -201,10 +202,12 @@ router.post('/', authMiddleware, checkPermission('floors', 'add'), validate(floo
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: "Floor deactivated successfully"
+ *                   example: "Floor deleted successfully"
  *                 data:
  *                   type: object
  *                   nullable: true
+ *       400:
+ *         description: can't delete dependencies found
  *       401:
  *         description: Unauthorized
  *       403:

@@ -254,14 +254,19 @@ export const updateLocation = async (req, res, next) => {
 };
 
 /**
- * Delete location (Soft delete)
+ * Delete location (Hard delete with dependency check)
  */
 export const deleteLocation = async (req, res, next) => {
   try {
     const { id } = req.params;
-    await prisma.locations.update({
-      where: { id: parseInt(id) },
-      data: { is_active: false }
+    const locationId = parseInt(id);
+
+    // Get location info before deletion for audit log
+    const location = await prisma.locations.findUnique({ where: { id: locationId } });
+    if (!location) throw new ApiError('Location not found', 404);
+
+    await prisma.locations.delete({
+      where: { id: locationId }
     });
 
     // Create Audit Log
@@ -269,12 +274,15 @@ export const deleteLocation = async (req, res, next) => {
       req,
       action: 'delete',
       entityType: 'locations',
-      entityId: id,
-      meta: { message: 'Location deactivated' }
+      entityId: locationId,
+      meta: { message: 'Location deleted', deletedLocation: location }
     });
 
-    return successResponse(res, null, 'Location deactivated successfully');
+    return successResponse(res, null, 'Location deleted successfully');
   } catch (error) {
+    if (error.code === 'P2003') {
+      return next(new ApiError("can't delete dependencies found", 400));
+    }
     next(error);
   }
 };

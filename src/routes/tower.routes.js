@@ -130,8 +130,9 @@ router.post('/', authMiddleware, checkPermission('towers', 'manage'), validate(t
  *       200:
  *         description: Tower updated successfully
  *   delete:
- *     summary: Delete/Deactivate tower
- *     tags: [Towers]
+ *     summary: Delete tower (Hard delete)
+ *     description: Deletes the tower record. Will fail if tower has associated floors.
+ *     tags: [Admin Panel]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -142,7 +143,9 @@ router.post('/', authMiddleware, checkPermission('towers', 'manage'), validate(t
  *           type: integer
  *     responses:
  *       200:
- *         description: Tower deactivated successfully
+ *         description: Tower deleted successfully
+ *       400:
+ *         description: can't delete dependencies found
  */
 router.get('/:id', authMiddleware, checkPermission('towers', 'view'), towerController.getTowerById);
 router.put('/:id', authMiddleware, checkPermission('towers', 'manage'), validate(towerSchema), towerController.updateTower);
