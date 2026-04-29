@@ -28,13 +28,15 @@ export const getDashboardStats = async (req, res, next) => {
       delivery_assigned: 0,
       delivery_accepted: 0,
       picked_up: 0,
+      reassigning: 0,
       completed: 0,
-      cancelled: 0,
-      delivery_reassigned: 0
+      cancelled: 0
     };
 
     statusCountsRaw.forEach(item => {
-      statusCounts[item.status] = item._count.id;
+      if (statusCounts.hasOwnProperty(item.status)) {
+        statusCounts[item.status] = item._count.id;
+      }
     });
 
     // 3. Top 8 Available Staff
@@ -72,7 +74,13 @@ export const getDashboardStats = async (req, res, next) => {
       orderBy: { created_at: 'desc' },
       include: {
         pickup_location: { select: { name: true } },
-        destination_location: { select: { name: true } }
+        destination_location: { select: { name: true } },
+        task_agents: {
+          where: { agent_status: { notIn: ['rejected', 'timeout'] } },
+          include: {
+            staff: { select: { id: true, name: true, employee_id: true } }
+          }
+        }
       }
     });
 
@@ -80,7 +88,7 @@ export const getDashboardStats = async (req, res, next) => {
     const inProgressTasks = await prisma.tasks.findMany({
       where: {
         ...timeFilter,
-        status: { in: ['delivery_accepted', 'picked_up'] }
+        status: { in: ['delivery_assigned', 'delivery_accepted', 'picked_up', 'reassigning'] }
       },
       take: 3,
       orderBy: { updated_at: 'desc' },
@@ -88,8 +96,10 @@ export const getDashboardStats = async (req, res, next) => {
         pickup_location: { select: { name: true } },
         destination_location: { select: { name: true } },
         task_agents: {
-          where: { agent_status: { in: ['accepted', 'picked_up'] } },
-          include: { staff: { select: { name: true } } }
+          where: { agent_status: { notIn: ['rejected', 'timeout'] } },
+          include: {
+            staff: { select: { id: true, name: true, employee_id: true } }
+          }
         }
       }
     });

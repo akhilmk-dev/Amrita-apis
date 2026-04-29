@@ -372,6 +372,13 @@ export const updateTaskAgents = async (req, res, next) => {
 
       // Handle Assignments (Add/Update)
       for (const agent of agents) {
+        // Check if this slot already has the same staff (to avoid resetting their status)
+        const existingSlot = task.task_agents.find(
+          a => a.slot_number === agent.slot_number
+        );
+        const isSameStaff = existingSlot && existingSlot.staff_id === agent.staff_id;
+        const isActiveAgent = existingSlot && ['accepted', 'picked_up'].includes(existingSlot.agent_status);
+
         // Upsert Task Agent
         await tx.task_agents.upsert({
           where: { task_id_slot_number: { task_id: taskId, slot_number: agent.slot_number } },
@@ -387,49 +394,53 @@ export const updateTaskAgents = async (req, res, next) => {
             staff_id: agent.staff_id,
             agent_label: agent.agent_label,
             assigned_by: actor_id,
-            agent_status: 'pending'
+            // Preserve status if same staff is already accepted/picked_up
+            ...(isSameStaff && isActiveAgent ? {} : { agent_status: 'pending' })
           }
         });
 
-        // Record History
-        await tx.task_assignment_history.create({
-          data: {
+        // Only notify and start timer for genuinely new or changed assignments
+        if (!isSameStaff || !isActiveAgent) {
+          // Record History
+          await tx.task_assignment_history.create({
+            data: {
+              task_id: taskId,
+              staff_id: agent.staff_id,
+              slot_number: agent.slot_number,
+              assigned_by: actor_id,
+              assignment_round: 1,
+              response: 'pending'
+            }
+          });
+
+          // Timeline
+          await tx.task_timeline.create({
+            data: {
+              task_id: taskId,
+              event_type: 'staff_assigned',
+              from_status: task.status,
+              to_status: 'delivery_assigned',
+              actor_id,
+              actor_type: 'admin',
+              staff_id: agent.staff_id
+            }
+          });
+
+          // Notification
+          await sendNotification({
+            user_id: agent.staff_id,
             task_id: taskId,
-            staff_id: agent.staff_id,
-            slot_number: agent.slot_number,
-            assigned_by: actor_id,
-            assignment_round: 1,
-            response: 'pending'
-          }
-        });
+            type: 'task_assigned',
+            title: 'New Job Assigned',
+            body: `You have been assigned to Task ${task.task_number}. Please accept within 60 seconds.`
+          }, tx);
 
-        // Timeline
-        await tx.task_timeline.create({
-          data: {
-            task_id: taskId,
-            event_type: 'staff_assigned',
-            from_status: task.status,
-            to_status: 'delivery_assigned',
-            actor_id,
-            actor_type: 'admin',
-            staff_id: agent.staff_id
-          }
-        });
-
-        // Notification
-        await sendNotification({
-          user_id: agent.staff_id,
-          task_id: taskId,
-          type: 'task_assigned',
-          title: 'New Job Assigned',
-          body: `You have been assigned to Task ${task.task_number}. Please accept within 60 seconds.`
-        }, tx);
-
-        // Trigger 60s timeout timer
-        setTimeout(() => handleAssignmentTimeout(taskId, agent.staff_id, actor_id), 60000);
+          // Trigger 60s timeout timer
+          setTimeout(() => handleAssignmentTimeout(taskId, agent.staff_id, actor_id), 60000);
+        }
       }
 
-      // Update Task Status
+      // Update Task Status to delivery_assigned
       await tx.tasks.update({
         where: { id: taskId },
         data: { status: 'delivery_assigned', updated_at: new Date() }
