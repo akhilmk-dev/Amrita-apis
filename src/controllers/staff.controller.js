@@ -33,6 +33,7 @@ export const getAvailableStaff = async (req, res, next) => {
         email: true,
         phone: true,
         employee_id: true,
+        profile_image: true,
         staff_current_status: {
           select: {
             availability: true,
@@ -85,6 +86,7 @@ export const getAllDeliveryStaff = async (req, res, next) => {
           phone: true,
           employee_id: true,
           is_active: true,
+          profile_image: true,
           staff_current_status: {
             select: {
               availability: true,

@@ -65,6 +65,7 @@ export const getDashboardStats = async (req, res, next) => {
         id: true,
         name: true,
         employee_id: true,
+        profile_image: true,
         staff_current_status: {
           select: { availability: true }
         }
@@ -83,7 +84,7 @@ export const getDashboardStats = async (req, res, next) => {
         task_agents: {
           where: { agent_status: { notIn: ['rejected', 'timeout'] } },
           include: {
-            staff: { select: { id: true, name: true, employee_id: true } }
+            staff: { select: { id: true, name: true, employee_id: true, profile_image: true } }
           }
         }
       }
@@ -102,7 +103,7 @@ export const getDashboardStats = async (req, res, next) => {
         task_agents: {
           where: { agent_status: { notIn: ['rejected', 'timeout'] } },
           include: {
-            staff: { select: { id: true, name: true, employee_id: true } }
+            staff: { select: { id: true, name: true, employee_id: true, profile_image: true } }
           }
         }
       }

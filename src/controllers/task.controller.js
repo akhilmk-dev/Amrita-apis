@@ -202,7 +202,7 @@ export const getTaskById = async (req, res, next) => {
         task_agents: {
           include: {
             staff: {
-              select: { id: true, name: true, employee_id: true }
+              select: { id: true, name: true, employee_id: true, profile_image: true }
             }
           }
         },
