@@ -172,6 +172,6 @@ router.put('/:id', authMiddleware, checkPermission('staff', 'edit'), uploadProfi
  *       404:
  *         description: Staff not found
  */
-router.delete('/:id', authMiddleware, checkPermission('staff', 'delete'), staffController.deactivateDeliveryStaff);
+router.delete('/:id', authMiddleware, checkPermission('staff', 'deactivate'), staffController.deactivateDeliveryStaff);
 
 export default router;
