@@ -1,5 +1,5 @@
 import prisma from '../config/prisma.js';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { successResponse, ApiError } from '../utils/response.utils.js';
 import { createAuditLog } from '../utils/audit.utils.js';
 
