@@ -28,7 +28,7 @@ export const getDashboardStats = async (req, res, next) => {
       delivery_assigned: 0,
       delivery_accepted: 0,
       picked_up: 0,
-      reassigning: 0,
+      delivery_reassigned: 0,
       completed: 0,
       cancelled: 0
     };
@@ -88,7 +88,7 @@ export const getDashboardStats = async (req, res, next) => {
     const inProgressTasks = await prisma.tasks.findMany({
       where: {
         ...timeFilter,
-        status: { in: ['delivery_assigned', 'delivery_accepted', 'picked_up', 'reassigning'] }
+        status: { in: ['delivery_assigned', 'delivery_accepted', 'picked_up', 'delivery_reassigned'] }
       },
       take: 3,
       orderBy: { updated_at: 'desc' },

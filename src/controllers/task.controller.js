@@ -479,11 +479,11 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id) => {
           }
         });
 
-        // 3. Always set task → reassigning when any agent times out
+        // 3. Always set task → delivery_reassigned when any agent times out
         const taskDetails2 = await tx.tasks.findUnique({ where: { id: taskId }, select: { status: true } });
         await tx.tasks.update({
           where: { id: taskId },
-          data: { status: 'reassigning', updated_at: new Date() }
+          data: { status: 'delivery_reassigned', updated_at: new Date() }
         });
 
         // 4. Timeline
@@ -492,7 +492,7 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id) => {
             task_id: taskId,
             event_type: 'staff_timeout',
             from_status: taskDetails2?.status || 'delivery_assigned',
-            to_status: 'reassigning',
+            to_status: 'delivery_reassigned',
             actor_id: staff_id,
             actor_type: 'system',
             staff_id
@@ -812,11 +812,11 @@ export const rejectTask = async (req, res, next) => {
         }
       });
 
-      // 3. Always set task → reassigning when any agent rejects
+      // 3. Always set task → delivery_reassigned when any agent rejects
       const task = await tx.tasks.findUnique({ where: { id: taskId }, select: { task_number: true, status: true } });
       await tx.tasks.update({
         where: { id: taskId },
-        data: { status: 'reassigning', updated_at: new Date() }
+        data: { status: 'delivery_reassigned', updated_at: new Date() }
       });
 
       // 4. Timeline
@@ -825,7 +825,7 @@ export const rejectTask = async (req, res, next) => {
           task_id: taskId,
           event_type: 'staff_rejected',
           from_status: task.status,
-          to_status: 'reassigning',
+          to_status: 'delivery_reassigned',
           actor_id: staff_id,
           actor_type: 'delivery_staff',
           staff_id,

@@ -122,76 +122,84 @@ export const handleTap = async (req, res, next) => {
           update: { availability: 'available', current_bay_id: parseInt(bay_id) }
         });
 
-      } else if (event_type === 'break_start') {
+      } else {
+        // For break_start, break_end, and shift_end, we need the active shift
         const shift = await tx.staff_shifts.findFirst({
           where: { staff_id, shift_date: new Date(today), is_complete: false }
         });
-        if (!shift) throw new ApiError('No active shift found', 404);
 
-        await tx.shift_breaks.create({
-          data: {
-            shift_id: shift.id,
-            break_start: new Date()
-          }
-        });
+        if (!shift) {
+          throw new ApiError('No active shift found', 404);
+        }
 
-        await tx.staff_current_status.update({
-          where: { staff_id },
-          data: { availability: 'on_break' }
-        });
+        // Bay Validation: Must tap the same bay where shift started
+        if (shift.start_bay_id !== parseInt(bay_id)) {
+          // Fetch bay name for a better error message if possible, or just use ID
+          throw new ApiError(`Action denied. You must return to the bay where you started your shift (Bay ID: ${shift.start_bay_id}).`, 403);
+        }
 
-      } else if (event_type === 'break_end') {
-        const shift = await tx.staff_shifts.findFirst({
-          where: { staff_id, shift_date: new Date(today), is_complete: false }
-        });
-        
-        const openBreak = await tx.shift_breaks.findFirst({
-          where: { shift_id: shift.id, break_end: null }
-        });
-        if (!openBreak) throw new ApiError('No open break found', 404);
+        if (event_type === 'break_start') {
+          await tx.shift_breaks.create({
+            data: {
+              shift_id: shift.id,
+              break_start: new Date()
+            }
+          });
 
-        const breakEnd = new Date();
-        const duration = dayjs(breakEnd).diff(dayjs(openBreak.break_start), 'minute');
+          await tx.staff_current_status.update({
+            where: { staff_id },
+            data: { availability: 'on_break' }
+          });
 
-        await tx.shift_breaks.update({
-          where: { id: openBreak.id },
-          data: { break_end: breakEnd, duration_minutes: duration }
-        });
+        } else if (event_type === 'break_end') {
+          const openBreak = await tx.shift_breaks.findFirst({
+            where: { shift_id: shift.id, break_end: null }
+          });
+          if (!openBreak) throw new ApiError('No open break found', 404);
 
-        // Recalculate total break minutes
-        const totalBreaks = await tx.shift_breaks.aggregate({
-          where: { shift_id: shift.id },
-          _sum: { duration_minutes: true }
-        });
+          const breakEnd = new Date();
+          const duration = dayjs(breakEnd).diff(dayjs(openBreak.break_start), 'minute');
 
-        await tx.staff_shifts.update({
-          where: { id: shift.id },
-          data: { total_break_minutes: totalBreaks._sum.duration_minutes || 0 }
-        });
+          await tx.shift_breaks.update({
+            where: { id: openBreak.id },
+            data: { break_end: breakEnd, duration_minutes: duration }
+          });
 
-        await tx.staff_current_status.update({
-          where: { staff_id },
-          data: { availability: 'available' }
-        });
+          // Recalculate total break minutes
+          const totalBreaks = await tx.shift_breaks.aggregate({
+            where: { shift_id: shift.id },
+            _sum: { duration_minutes: true }
+          });
 
-      } else if (event_type === 'shift_end') {
-        await tx.staff_shifts.updateMany({
-          where: { staff_id, shift_date: new Date(today), is_complete: false },
-          data: { 
-            shift_end: new Date(),
-            is_complete: true,
-            updated_at: new Date()
-          }
-        });
+          await tx.staff_shifts.update({
+            where: { id: shift.id },
+            data: { total_break_minutes: totalBreaks._sum.duration_minutes || 0 }
+          });
 
-        await tx.staff_current_status.update({
-          where: { staff_id },
-          data: { 
-            availability: 'off_shift',
-            current_bay_id: null,
-            current_task_id: null
-          }
-        });
+          await tx.staff_current_status.update({
+            where: { staff_id },
+            data: { availability: 'available' }
+          });
+
+        } else if (event_type === 'shift_end') {
+          await tx.staff_shifts.update({
+            where: { id: shift.id },
+            data: { 
+              shift_end: new Date(),
+              is_complete: true,
+              updated_at: new Date()
+            }
+          });
+
+          await tx.staff_current_status.update({
+            where: { staff_id },
+            data: { 
+              availability: 'off_shift',
+              current_bay_id: null,
+              current_task_id: null
+            }
+          });
+        }
       }
     });
 
