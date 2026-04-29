@@ -87,7 +87,12 @@ export const sendNotification = async ({ user_id, task_id, type, title, body, ro
         externalUserIds: [String(user_id)],
         title,
         body,
-        data: { type, task_id: task_id ? String(task_id) : null }
+        data: { 
+          type, 
+          task_id: task_id ? String(task_id) : null,
+          screen: 'TaskDetails',
+          path: 'com.amritha_admin/TaskDetails'
+        }
       });
     }
 
@@ -98,7 +103,12 @@ export const sendNotification = async ({ user_id, task_id, type, title, body, ro
         externalUserIds: [String(user_id)],
         title,
         body,
-        data: { type, task_id: task_id ? String(task_id) : null }
+        data: { 
+          type, 
+          task_id: task_id ? String(task_id) : null,
+          screen: 'TaskDetails',
+          path: 'com.amritha_admin/TaskDetails'
+        }
       });
     }
 
