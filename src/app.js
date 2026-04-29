@@ -8,6 +8,11 @@ import dotenv from 'dotenv';
 import router from './routes/index.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 
+// Add BigInt JSON serialization support
+BigInt.prototype.toJSON = function () {
+  return this.toString();
+};
+
 dotenv.config();
 
 const app = express();
