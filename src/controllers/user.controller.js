@@ -101,6 +101,11 @@ export const createUser = async (req, res, next) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    let profile_image = null;
+    if (req.file) {
+      profile_image = `/public/uploads/profiles/${req.file.filename}`;
+    }
+
     const newUser = await prisma.users.create({
       data: {
         name,
@@ -109,6 +114,7 @@ export const createUser = async (req, res, next) => {
         role_id: parseInt(role_id),
         phone,
         employee_id,
+        profile_image,
         is_active: true
       },
       include: {
@@ -122,6 +128,7 @@ export const createUser = async (req, res, next) => {
       email: newUser.email,
       role_id: newUser.role_id,
       is_active: newUser.is_active,
+      profile_image: newUser.profile_image,
       created_at: newUser.created_at,
       role: newUser.role,
     };
@@ -165,6 +172,10 @@ export const updateUser = async (req, res, next) => {
       is_active
     };
 
+    if (req.file) {
+      data.profile_image = `/public/uploads/profiles/${req.file.filename}`;
+    }
+
     if (password) {
       data.password_hash = await bcrypt.hash(password, 10);
     }
@@ -183,6 +194,7 @@ export const updateUser = async (req, res, next) => {
       email: updatedUser.email,
       role_id: updatedUser.role_id,
       is_active: updatedUser.is_active,
+      profile_image: updatedUser.profile_image,
       updated_at: updatedUser.updated_at,
       role: updatedUser.role,
     };

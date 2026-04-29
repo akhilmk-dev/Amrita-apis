@@ -142,6 +142,11 @@ export const createDeliveryStaff = async (req, res, next) => {
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(password, salt);
 
+    let profile_image = null;
+    if (req.file) {
+      profile_image = `/public/uploads/profiles/${req.file.filename}`;
+    }
+
     const newStaff = await prisma.users.create({
       data: {
         name,
@@ -150,6 +155,7 @@ export const createDeliveryStaff = async (req, res, next) => {
         role_id: role.id,
         phone,
         employee_id,
+        profile_image,
         is_active: is_active !== undefined ? is_active : true
       },
       select: {
@@ -159,6 +165,7 @@ export const createDeliveryStaff = async (req, res, next) => {
         phone: true,
         employee_id: true,
         is_active: true,
+        profile_image: true,
         created_at: true
       }
     });
@@ -212,6 +219,10 @@ export const updateDeliveryStaff = async (req, res, next) => {
     // Remove undefined values
     Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
 
+    if (req.file) {
+      updateData.profile_image = `/public/uploads/profiles/${req.file.filename}`;
+    }
+
     if (password) {
       const salt = await bcrypt.genSalt(10);
       updateData.password_hash = await bcrypt.hash(password, salt);
@@ -227,6 +238,7 @@ export const updateDeliveryStaff = async (req, res, next) => {
         phone: true,
         employee_id: true,
         is_active: true,
+        profile_image: true,
         updated_at: true
       }
     });

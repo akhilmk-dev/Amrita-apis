@@ -3,6 +3,7 @@ import * as userController from '../controllers/user.controller.js';
 import authMiddleware from '../middlewares/auth.middleware.js';
 import { checkPermission } from '../middlewares/permission.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
+import { uploadProfileImage } from '../middlewares/upload.middleware.js';
 import { createUserSchema, updateUserSchema, paginationQuerySchema } from '../validations/schemas.js';
 
 const router = Router();
@@ -64,7 +65,7 @@ const router = Router();
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
  *             required: [name, email, password, role_id]
@@ -84,12 +85,19 @@ const router = Router();
  *               is_active:
  *                 type: boolean
  *                 default: true
+ *               profile_image:
+ *                 type: string
+ *                 format: binary
  *     responses:
  *       201:
  *         description: User created successfully
+ *       400:
+ *         description: Validation error or Email/Employee ID exists
+ *       403:
+ *         description: Forbidden
  */
 router.get('/', authMiddleware, checkPermission('staff', 'view'), validate(paginationQuerySchema), userController.getAllUsers);
-router.post('/', authMiddleware, checkPermission('staff', 'manage'), validate(createUserSchema), userController.createUser);
+router.post('/', authMiddleware, checkPermission('staff', 'manage'), uploadProfileImage.single('profile_image'), validate(createUserSchema), userController.createUser);
 
 /**
  * @swagger
@@ -122,7 +130,7 @@ router.post('/', authMiddleware, checkPermission('staff', 'manage'), validate(cr
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
  *             properties:
@@ -140,9 +148,16 @@ router.post('/', authMiddleware, checkPermission('staff', 'manage'), validate(cr
  *                 type: string
  *               is_active:
  *                 type: boolean
+ *               profile_image:
+ *                 type: string
+ *                 format: binary
  *     responses:
  *       200:
  *         description: User updated successfully
+ *       400:
+ *         description: Validation error or Email/Employee ID exists
+ *       404:
+ *         description: User not found
  *   delete:
  *     summary: Delete/Deactivate user
  *     tags: [Users]
@@ -159,7 +174,7 @@ router.post('/', authMiddleware, checkPermission('staff', 'manage'), validate(cr
  *         description: User deactivated successfully
  */
 router.get('/:id', authMiddleware, checkPermission('staff', 'view'), userController.getUserById);
-router.put('/:id', authMiddleware, checkPermission('staff', 'manage'), validate(updateUserSchema), userController.updateUser);
+router.put('/:id', authMiddleware, checkPermission('staff', 'manage'), uploadProfileImage.single('profile_image'), validate(updateUserSchema), userController.updateUser);
 router.delete('/:id', authMiddleware, checkPermission('staff', 'manage'), userController.deleteUser);
 
 export default router;

@@ -3,6 +3,7 @@ import * as staffController from '../controllers/staff.controller.js';
 import authMiddleware from '../middlewares/auth.middleware.js';
 import { checkPermission } from '../middlewares/permission.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
+import { uploadProfileImage } from '../middlewares/upload.middleware.js';
 import { paginationQuerySchema, createDeliveryStaffSchema, updateDeliveryStaffSchema } from '../validations/schemas.js';
 
 const router = Router();
@@ -68,7 +69,7 @@ router.get('/available', authMiddleware, checkPermission('staff', 'view'), staff
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
  *             required:
@@ -89,6 +90,9 @@ router.get('/available', authMiddleware, checkPermission('staff', 'view'), staff
  *                 type: string
  *               is_active:
  *                 type: boolean
+ *               profile_image:
+ *                 type: string
+ *                 format: binary
  *     responses:
  *       201:
  *         description: Delivery staff created successfully
@@ -97,7 +101,7 @@ router.get('/available', authMiddleware, checkPermission('staff', 'view'), staff
  *       403:
  *         description: Forbidden
  */
-router.post('/', authMiddleware, checkPermission('staff', 'create'), validate(createDeliveryStaffSchema), staffController.createDeliveryStaff);
+router.post('/', authMiddleware, checkPermission('staff', 'create'), uploadProfileImage.single('profile_image'), validate(createDeliveryStaffSchema), staffController.createDeliveryStaff);
 
 /**
  * @swagger
@@ -117,7 +121,7 @@ router.post('/', authMiddleware, checkPermission('staff', 'create'), validate(cr
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
  *             properties:
@@ -134,6 +138,9 @@ router.post('/', authMiddleware, checkPermission('staff', 'create'), validate(cr
  *                 type: string
  *               is_active:
  *                 type: boolean
+ *               profile_image:
+ *                 type: string
+ *                 format: binary
  *     responses:
  *       200:
  *         description: Delivery staff updated successfully
@@ -142,7 +149,7 @@ router.post('/', authMiddleware, checkPermission('staff', 'create'), validate(cr
  *       404:
  *         description: Staff not found
  */
-router.put('/:id', authMiddleware, checkPermission('staff', 'edit'), validate(updateDeliveryStaffSchema), staffController.updateDeliveryStaff);
+router.put('/:id', authMiddleware, checkPermission('staff', 'edit'), uploadProfileImage.single('profile_image'), validate(updateDeliveryStaffSchema), staffController.updateDeliveryStaff);
 
 /**
  * @swagger
