@@ -468,25 +468,20 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id) => {
           }
         });
 
-        // 3. Check for reassigning status
-        const activeAgents = await tx.task_agents.count({
-          where: { task_id: taskId, agent_status: { in: ['accepted', 'picked_up'] } }
+        // 3. Always set task → reassigning when any agent times out
+        const taskDetails2 = await tx.tasks.findUnique({ where: { id: taskId }, select: { status: true } });
+        await tx.tasks.update({
+          where: { id: taskId },
+          data: { status: 'reassigning', updated_at: new Date() }
         });
-
-        if (activeAgents === 0) {
-          await tx.tasks.update({
-            where: { id: taskId },
-            data: { status: 'reassigning', updated_at: new Date() }
-          });
-        }
 
         // 4. Timeline
         await tx.task_timeline.create({
           data: {
             task_id: taskId,
             event_type: 'staff_timeout',
-            from_status: 'delivery_assigned',
-            to_status: activeAgents === 0 ? 'reassigning' : 'delivery_assigned',
+            from_status: taskDetails2?.status || 'delivery_assigned',
+            to_status: 'reassigning',
             actor_id: staff_id,
             actor_type: 'system',
             staff_id
@@ -551,9 +546,13 @@ export const acceptTask = async (req, res, next) => {
         }
       });
 
-      // 3. Update Task Status (if not already accepted/higher)
+      // 3. Only flip task to delivery_accepted when ALL agents have accepted
       const task = await tx.tasks.findUnique({ where: { id: taskId } });
-      if (task.status === 'delivery_assigned' || task.status === 'reassigning') {
+      const totalAgents = await tx.task_agents.count({ where: { task_id: taskId } });
+      const acceptedAgents = await tx.task_agents.count({ where: { task_id: taskId, agent_status: 'accepted' } });
+      const allAccepted = totalAgents > 0 && acceptedAgents === totalAgents;
+
+      if (allAccepted) {
         await tx.tasks.update({
           where: { id: taskId },
           data: { 
@@ -570,7 +569,7 @@ export const acceptTask = async (req, res, next) => {
           task_id: taskId,
           event_type: 'staff_accepted',
           from_status: task.status,
-          to_status: 'delivery_accepted',
+          to_status: allAccepted ? 'delivery_accepted' : task.status,
           actor_id: staff_id,
           actor_type: 'delivery_staff',
           staff_id
@@ -668,16 +667,31 @@ export const completeTask = async (req, res, next) => {
     }
 
     await prisma.$transaction(async (tx) => {
+      const today = new Date().toISOString().split('T')[0];
+
+      // Determine which agents to mark as delivered:
+      // - Delivery staff: only their own agent row
+      // - Admin: all assigned agents for this task
+      const agentFilter = isAdmin
+        ? { task_id: taskId }
+        : { task_id: taskId, staff_id };
+
       // 1. Update Agent Status
       await tx.task_agents.updateMany({
-        where: { task_id: taskId, staff_id },
+        where: agentFilter,
         data: { 
           agent_status: 'delivered',
           delivered_at: new Date()
         }
       });
 
-      // 2. Check if all agents completed (optional logic, usually task completes when last agent delivers)
+      // 2. Get all assigned agents so we can update their stats
+      const assignedAgents = await tx.task_agents.findMany({
+        where: { task_id: taskId },
+        select: { staff_id: true }
+      });
+
+      // 3. Check if all agents completed
       const pendingAgents = await tx.task_agents.count({
         where: { task_id: taskId, agent_status: { not: 'delivered' } }
       });
@@ -703,22 +717,23 @@ export const completeTask = async (req, res, next) => {
         });
       }
 
-      // 3. Free Staff
-      await tx.staff_current_status.updateMany({
-        where: { staff_id },
-        data: { 
-          availability: 'available',
-          current_task_id: null,
-          updated_at: new Date()
-        }
-      });
+      // 4. For each assigned agent: free their status & increment total_jobs
+      for (const agent of assignedAgents) {
+        await tx.staff_current_status.updateMany({
+          where: { staff_id: agent.staff_id },
+          data: { 
+            availability: 'available',
+            current_task_id: null,
+            updated_at: new Date()
+          }
+        });
 
-      // 4. Increment total_jobs for the staff's current shift
-      const today = new Date().toISOString().split('T')[0];
-      await tx.staff_shifts.updateMany({
-        where: { staff_id, shift_date: new Date(today), is_complete: false },
-        data: { total_jobs: { increment: 1 } }
-      });
+        // Increment total_jobs on the agent's active shift for today
+        await tx.staff_shifts.updateMany({
+          where: { staff_id: agent.staff_id, shift_date: new Date(today), is_complete: false },
+          data: { total_jobs: { increment: 1 } }
+        });
+      }
 
       // 5. Timeline
       const task = await tx.tasks.findUnique({ where: { id: taskId } });
@@ -729,8 +744,8 @@ export const completeTask = async (req, res, next) => {
           from_status: task.status,
           to_status: pendingAgents === 0 ? 'completed' : task.status,
           actor_id: staff_id,
-          actor_type: 'delivery_staff',
-          staff_id
+          actor_type: isAdmin ? 'admin' : 'delivery_staff',
+          staff_id: isAdmin ? null : staff_id
         }
       });
     });
@@ -786,25 +801,20 @@ export const rejectTask = async (req, res, next) => {
         }
       });
 
-      // 3. Check for reassigning status
-      const activeAgents = await tx.task_agents.count({
-        where: { task_id: taskId, agent_status: { in: ['accepted', 'picked_up'] } }
+      // 3. Always set task → reassigning when any agent rejects
+      const task = await tx.tasks.findUnique({ where: { id: taskId }, select: { task_number: true, status: true } });
+      await tx.tasks.update({
+        where: { id: taskId },
+        data: { status: 'reassigning', updated_at: new Date() }
       });
-
-      if (activeAgents === 0) {
-        await tx.tasks.update({
-          where: { id: taskId },
-          data: { status: 'reassigning', updated_at: new Date() }
-        });
-      }
 
       // 4. Timeline
       await tx.task_timeline.create({
         data: {
           task_id: taskId,
           event_type: 'staff_rejected',
-          from_status: 'delivery_assigned',
-          to_status: activeAgents === 0 ? 'reassigning' : 'delivery_assigned',
+          from_status: task.status,
+          to_status: 'reassigning',
           actor_id: staff_id,
           actor_type: 'delivery_staff',
           staff_id,

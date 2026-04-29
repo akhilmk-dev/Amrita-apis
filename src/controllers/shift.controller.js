@@ -64,7 +64,47 @@ export const handleTap = async (req, res, next) => {
       });
 
       if (event_type === 'shift_start') {
-        // Create Shift
+        // Auto-close any abandoned open shift from a previous day
+        const openPreviousShift = await tx.staff_shifts.findFirst({
+          where: {
+            staff_id,
+            is_complete: false,
+            shift_date: { lt: new Date(today) }
+          }
+        });
+
+        if (openPreviousShift) {
+          // Close any open breaks first
+          const openBreaks = await tx.shift_breaks.findMany({
+            where: { shift_id: openPreviousShift.id, break_end: null }
+          });
+          for (const br of openBreaks) {
+            const duration = dayjs().diff(dayjs(br.break_start), 'minute');
+            await tx.shift_breaks.update({
+              where: { id: br.id },
+              data: { break_end: new Date(), duration_minutes: duration }
+            });
+          }
+
+          // Recalculate total break minutes
+          const totalBreaks = await tx.shift_breaks.aggregate({
+            where: { shift_id: openPreviousShift.id },
+            _sum: { duration_minutes: true }
+          });
+
+          // Auto-close the previous shift - use the last known time as shift_end
+          await tx.staff_shifts.update({
+            where: { id: openPreviousShift.id },
+            data: {
+              shift_end: openPreviousShift.shift_start, // Fallback: mark shift_end at start if unknown
+              is_complete: true,
+              total_break_minutes: totalBreaks._sum.duration_minutes || 0,
+              updated_at: new Date()
+            }
+          });
+        }
+
+        // Create new shift for today
         await tx.staff_shifts.create({
           data: {
             staff_id,
