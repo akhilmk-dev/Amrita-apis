@@ -12,6 +12,7 @@ import shiftRoutes from './shift.routes.js';
 import rejectionReasonRoutes from './rejectionReason.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
 import deliveryRoutes from './delivery.routes.js';
+import notificationRoutes from './notification.routes.js';
 import authMiddleware from '../middlewares/auth.middleware.js';
 import { restrictRole } from '../middlewares/permission.middleware.js';
 
@@ -36,6 +37,9 @@ v1Router.use('/staff', authMiddleware, adminGate, staffRoutes);
 v1Router.use('/staff-shifts', authMiddleware, adminGate, shiftRoutes);
 v1Router.use('/rejection-reasons', authMiddleware, adminGate, rejectionReasonRoutes);
 v1Router.use('/dashboard', authMiddleware, adminGate, dashboardRoutes);
+
+// Notifications - accessible to all authenticated users (admins + delivery staff)
+v1Router.use('/notifications', authMiddleware, notificationRoutes);
 
 // Main router
 router.use('/v1', v1Router);

@@ -161,10 +161,6 @@ const router = Router();
  *                 type: string
  *               phone_number:
  *                 type: string
- *               pickup_location_id:
- *                 type: integer
- *               destination_location_id:
- *                 type: integer
  *               date_time:
  *                 type: string
  *                 format: date-time
@@ -174,9 +170,6 @@ const router = Router();
  *                 type: string
  *               remarks:
  *                 type: string
- *               status:
- *                 type: string
- *                 enum: [new, delivery_assigned, delivery_accepted, delivery_reassigned, picked_up, completed, cancelled]
  *     responses:
  *       200:
  *         description: Task updated
@@ -194,8 +187,10 @@ const router = Router();
  *     responses:
  *       200:
  *         description: Detailed task information including agents and timeline
- *   delete:
- *     summary: Cancel task
+ *
+ * /api/v1/tasks/{id}/cancel:
+ *   post:
+ *     summary: Cancel a task
  *     tags: [Tasks]
  *     security:
  *       - bearerAuth: []
@@ -205,9 +200,22 @@ const router = Router();
  *         required: true
  *         schema:
  *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               cancel_reason:
+ *                 type: string
+ *                 description: Optional reason for cancellation
  *     responses:
  *       200:
- *         description: Task cancelled
+ *         description: Task cancelled successfully
+ *       400:
+ *         description: Task cannot be cancelled (already completed)
+ *       404:
+ *         description: Task not found
  */
 
 /**
@@ -335,7 +343,7 @@ router.post('/:id/accept', authMiddleware, checkPermission('tasks', 'update_stat
 router.post('/:id/pickup', authMiddleware, checkPermission('tasks', 'update_status'), taskController.pickupTask);
 router.post('/:id/complete', authMiddleware, checkPermission('tasks', 'update_status'), taskController.completeTask);
 router.put('/:id', authMiddleware, checkPermission('tasks', 'update_status'), validate(updateTaskSchema), taskController.updateTask);
-router.delete('/:id', authMiddleware, checkPermission('tasks', 'cancel'), taskController.deleteTask);
+router.post('/:id/cancel', authMiddleware, checkPermission('tasks', 'cancel'), taskController.cancelTask);
 
 
 

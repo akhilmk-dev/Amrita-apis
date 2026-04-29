@@ -189,13 +189,10 @@ export const updateTaskSchema = z.object({
     patient_category: z.string().optional(),
     patient_name: z.string().optional(),
     phone_number: z.string().optional(),
-    pickup_location_id: z.preprocess((val) => (val ? Number(val) : undefined), z.number()).optional(),
-    destination_location_id: z.preprocess((val) => (val ? Number(val) : undefined), z.number()).optional(),
     date_time: z.string().optional().nullable(),
     specify: z.string().optional().nullable(),
     purpose_of_transfer: z.string().optional(),
     remarks: z.string().optional().nullable(),
-    status: z.enum(['new', 'delivery_assigned', 'delivery_accepted', 'delivery_reassigned', 'picked_up', 'completed', 'cancelled']).optional(),
   }),
 });
 

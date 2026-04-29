@@ -112,6 +112,18 @@ export const createTask = async (req, res, next) => {
       }
     });
 
+    // Notify Admin (Creator)
+    if (req.user?.user_id) {
+      await sendNotification({
+        user_id: req.user.user_id,
+        task_id: newTask.id,
+        type: 'task_created',
+        title: 'Task Created',
+        body: `Task #${newTask.task_number} has been created successfully.`,
+        role_key: req.user.role_key
+      });
+    }
+
     // 3. Create Audit Log
     await createAuditLog({
       req,
@@ -256,12 +268,9 @@ export const updateTask = async (req, res, next) => {
         patient_name: updateData.patient_name,
         patient_phone: updateData.phone_number,
         patient_category: updateData.patient_category,
-        pickup_location_id: updateData.pickup_location_id,
-        destination_location_id: updateData.destination_location_id,
         asset_type_notes: updateData.specify,
         transfer_purpose: updateData.purpose_of_transfer,
         remarks: updateData.remarks,
-        status: updateData.status,
         scheduled_at: updateData.date_time ? new Date(updateData.date_time) : undefined
       }
     });
@@ -284,7 +293,119 @@ export const updateTask = async (req, res, next) => {
 };
 
 /**
- * Delete (Cancel) task
+ * Cancel Task (dedicated cancel action)
+ */
+export const cancelTask = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { cancel_reason } = req.body;
+    const taskId = parseInt(id);
+
+    const task = await prisma.tasks.findUnique({ where: { id: taskId } });
+    if (!task) throw new ApiError('Task not found', 404);
+
+    if (task.status === 'completed') {
+      throw new ApiError('Cannot cancel a completed task', 400);
+    }
+
+    if (task.status === 'cancelled') {
+      throw new ApiError('Task is already cancelled', 400);
+    }
+
+    const fromStatus = task.status;
+
+    // Get assigned agents before clearing them
+    const assignedAgents = await prisma.task_agents.findMany({
+      where: { 
+        task_id: taskId, 
+        agent_status: { in: ['pending', 'accepted'] } 
+      },
+      include: {
+        staff: {
+          select: { user_id: true }
+        }
+      }
+    });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.tasks.update({
+        where: { id: taskId },
+        data: {
+          status: 'cancelled',
+          cancelled_at: new Date(),
+          remarks: cancel_reason || task.remarks
+        }
+      });
+
+      await tx.task_timeline.create({
+        data: {
+          task_id: taskId,
+          event_type: 'cancelled',
+          from_status: fromStatus,
+          to_status: 'cancelled',
+          actor_id: req.user?.user_id || null,
+          actor_type: req.user?.role_key === 'super_admin' ? 'admin' : 'system',
+          notes: cancel_reason || null
+        }
+      });
+
+      // Free up any assigned agents
+      await tx.task_agents.updateMany({
+        where: { task_id: taskId, agent_status: { in: ['pending', 'accepted'] } },
+        data: { agent_status: 'rejected' }
+      });
+
+      // Reset their current_task_id in staff_current_status
+      await tx.staff_current_status.updateMany({
+        where: { current_task_id: taskId },
+        data: { availability: 'available', current_task_id: null }
+      });
+    });
+
+    // Send notifications (outside transaction)
+    const notificationPayload = {
+      task_id: taskId,
+      type: 'task_cancelled',
+      title: 'Task Cancelled',
+      body: `Task #${task.task_number} for patient ${task.patient_name} has been cancelled.`
+    };
+
+    // 1. Notify Assigned Staff
+    for (const agent of assignedAgents) {
+      if (agent.staff?.user_id) {
+        sendNotification({
+          ...notificationPayload,
+          user_id: agent.staff.user_id,
+          role_key: 'delivery_staff'
+        });
+      }
+    }
+
+    // 2. Notify Admin (the one who cancelled it, so it shows in their panel/bell)
+    if (req.user?.user_id) {
+      sendNotification({
+        ...notificationPayload,
+        user_id: req.user.user_id,
+        role_key: req.user.role_key
+      });
+    }
+
+    await createAuditLog({
+      req,
+      action: 'delete',
+      entityType: 'tasks',
+      entityId: id,
+      meta: { message: 'Task cancelled', cancel_reason }
+    });
+
+    return successResponse(res, null, 'Task cancelled successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Delete (Cancel) task - kept for backward compatibility
  */
 export const deleteTask = async (req, res, next) => {
   try {
@@ -432,7 +553,8 @@ export const updateTaskAgents = async (req, res, next) => {
             task_id: taskId,
             type: 'task_assigned',
             title: 'New Job Assigned',
-            body: `You have been assigned to Task ${task.task_number}. Please accept within 60 seconds.`
+            body: `You have been assigned to Task ${task.task_number}. Please accept within 60 seconds.`,
+            role_key: 'delivery_staff'
           }, tx);
 
           // Trigger 60s timeout timer
@@ -506,7 +628,8 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id) => {
           task_id: taskId,
           type: 'staff_timeout',
           title: 'Staff Assignment Timeout',
-          body: `Staff member (ID: ${staff_id}) failed to accept task ${taskDetails?.task_number} within 60s.`
+          body: `Staff member (ID: ${staff_id}) failed to accept task ${taskDetails?.task_number} within 60s.`,
+          role_key: 'admin' // Or find actual role of admin_id
         }, tx);
       });
       console.log(`Assignment timeout handled for Task ${taskId}, Staff ${staff_id}`);
@@ -586,6 +709,22 @@ export const acceptTask = async (req, res, next) => {
           staff_id
         }
       });
+
+      // 5. Notify the assigner (Admin)
+      const agentDetails = await tx.task_agents.findFirst({
+        where: { task_id: taskId, staff_id },
+        select: { assigned_by: true, staff: { select: { name: true } } }
+      });
+      if (agentDetails?.assigned_by) {
+        await sendNotification({
+          user_id: agentDetails.assigned_by,
+          task_id: taskId,
+          type: 'staff_accepted',
+          title: 'Task Accepted',
+          body: `${agentDetails.staff.name} has accepted Task #${task.task_number}.`,
+          role_key: 'admin'
+        }, tx);
+      }
     });
 
     return successResponse(res, null, 'Task accepted successfully');
@@ -648,6 +787,18 @@ export const pickupTask = async (req, res, next) => {
           staff_id
         }
       });
+
+      // 4. Notify Creator (Admin)
+      if (task.created_by) {
+        await sendNotification({
+          user_id: task.created_by,
+          task_id: taskId,
+          type: 'task_picked_up',
+          title: 'Task Picked Up',
+          body: `Task #${task.task_number} has been picked up by the agent.`,
+          role_key: 'admin'
+        }, tx);
+      }
     });
 
     return successResponse(res, null, 'Task picked up successfully');
@@ -709,13 +860,16 @@ export const completeTask = async (req, res, next) => {
 
       if (pendingAgents === 0) {
         const taskDetails = await tx.tasks.findUnique({ where: { id: taskId } });
-        await sendNotification({
-          user_id: taskDetails.created_by,
-          task_id: taskId,
-          type: 'task_completed',
-          title: 'Task Completed',
-          body: `Task ${taskDetails.task_number} has been successfully completed.`
-        }, tx);
+        if (taskDetails.created_by) {
+          await sendNotification({
+            user_id: taskDetails.created_by,
+            task_id: taskId,
+            type: 'task_completed',
+            title: 'Task Completed',
+            body: `Task ${taskDetails.task_number} has been successfully completed.`,
+            role_key: 'admin'
+          }, tx);
+        }
 
         await tx.tasks.update({
           where: { id: taskId },
@@ -844,7 +998,8 @@ export const rejectTask = async (req, res, next) => {
           task_id: taskId,
           type: 'task_rejected',
           title: 'Task Assignment Rejected',
-          body: `Staff member rejected task ${taskId}. Reason: ${rejection_notes || 'Not specified'}`
+          body: `Staff member rejected task #${task.task_number}. Reason: ${rejection_notes || 'Not specified'}`,
+          role_key: 'admin'
         }, tx);
       }
     });
