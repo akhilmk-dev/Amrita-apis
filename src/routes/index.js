@@ -8,7 +8,6 @@ import locationRoutes from './location.routes.js';
 import staffBayRoutes from './staffBay.routes.js';
 import taskRoutes from './task.routes.js';
 import staffRoutes from './staff.routes.js';
-import shiftRoutes from './shift.routes.js';
 import rejectionReasonRoutes from './rejectionReason.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
 import deliveryRoutes from './delivery.routes.js';
@@ -21,7 +20,7 @@ const v1Router = Router();
 
 // v1 Routes
 v1Router.use('/auth', authRoutes);
-v1Router.use('/delivery/tasks', deliveryRoutes);
+v1Router.use('/delivery', authMiddleware, deliveryRoutes);
 
 // Protect all admin/standard routes
 const adminGate = restrictRole(['delivery_staff']);
@@ -34,7 +33,6 @@ v1Router.use('/locations', authMiddleware, adminGate, locationRoutes);
 v1Router.use('/staff-bays', authMiddleware, adminGate, staffBayRoutes);
 v1Router.use('/tasks', authMiddleware, adminGate, taskRoutes);
 v1Router.use('/staff', authMiddleware, adminGate, staffRoutes);
-v1Router.use('/staff-shifts', authMiddleware, adminGate, shiftRoutes);
 v1Router.use('/rejection-reasons', authMiddleware, adminGate, rejectionReasonRoutes);
 v1Router.use('/dashboard', authMiddleware, adminGate, dashboardRoutes);
 

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as taskController from '../controllers/task.controller.js';
+import * as shiftController from '../controllers/shift.controller.js';
 import authMiddleware from '../middlewares/auth.middleware.js';
 import { checkPermission } from '../middlewares/permission.middleware.js';
 
@@ -9,8 +10,54 @@ const router = Router();
  * @swagger
  * tags:
  *   name: Delivery App
- *   description: APIs for delivery staff to manage their tasks
+ *   description: APIs for delivery staff to manage their tasks and shifts
  */
+
+// --- Shift / Taping (Delivery Staff Only) ---
+
+/**
+ * @swagger
+ * /api/v1/delivery/tap-status:
+ *   get:
+ *     summary: Get available actions for the current staff based on shift state
+ *     tags: [Delivery App]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of available actions (shift_start, break_start, etc.)
+ */
+router.get('/tap-status', authMiddleware, checkPermission('delivery', 'tap'), shiftController.getTapStatus);
+
+/**
+ * @swagger
+ * /api/v1/delivery/tap:
+ *   post:
+ *     summary: Record a bay tap event (shift/break start/end)
+ *     tags: [Delivery App]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [bay_id, event_type]
+ *             properties:
+ *               bay_id:
+ *                 type: integer
+ *               event_type:
+ *                 type: string
+ *                 enum: [shift_start, break_start, break_end, shift_end]
+ *     responses:
+ *       200:
+ *         description: Event processed successfully
+ */
+router.post('/tap', authMiddleware, checkPermission('delivery', 'tap'), shiftController.handleTap);
+
+
+// --- Task Actions ---
 
 /**
  * @swagger
@@ -30,7 +77,7 @@ const router = Router();
  *       200:
  *         description: Task accepted
  */
-router.post('/:id/accept', authMiddleware, checkPermission('delivery', 'accept_reject'), taskController.acceptTask);
+router.post('/tasks/:id/accept', authMiddleware, checkPermission('delivery', 'accept_reject'), taskController.acceptTask);
 
 /**
  * @swagger
@@ -60,7 +107,7 @@ router.post('/:id/accept', authMiddleware, checkPermission('delivery', 'accept_r
  *       200:
  *         description: Task rejected
  */
-router.post('/:id/reject', authMiddleware, checkPermission('delivery', 'accept_reject'), taskController.rejectTask);
+router.post('/tasks/:id/reject', authMiddleware, checkPermission('delivery', 'accept_reject'), taskController.rejectTask);
 
 /**
  * @swagger
@@ -80,7 +127,7 @@ router.post('/:id/reject', authMiddleware, checkPermission('delivery', 'accept_r
  *       200:
  *         description: Task picked up
  */
-router.post('/:id/pickup', authMiddleware, checkPermission('delivery', 'update_own'), taskController.pickupTask);
+router.post('/tasks/:id/pickup', authMiddleware, checkPermission('delivery', 'update_own'), taskController.pickupTask);
 
 /**
  * @swagger
@@ -100,6 +147,6 @@ router.post('/:id/pickup', authMiddleware, checkPermission('delivery', 'update_o
  *       200:
  *         description: Task completed
  */
-router.post('/:id/complete', authMiddleware, checkPermission('delivery', 'update_own'), taskController.completeTask);
+router.post('/tasks/:id/complete', authMiddleware, checkPermission('delivery', 'update_own'), taskController.completeTask);
 
 export default router;
