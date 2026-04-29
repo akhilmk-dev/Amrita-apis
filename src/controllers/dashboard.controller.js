@@ -40,14 +40,19 @@ export const getDashboardStats = async (req, res, next) => {
     });
 
     // 3. Top 8 Available Staff
+    const todayStr = dayjs().format('YYYY-MM-DD');
     const availableStaff = await prisma.users.findMany({
       where: {
         is_active: true,
         role: { role_key: 'delivery_staff' },
-        NOT: {
-          staff_current_status: {
-            availability: { in: ['on_job', 'on_break', 'off_shift'] }
+        staff_shifts: {
+          some: {
+            shift_date: new Date(todayStr),
+            is_complete: false
           }
+        },
+        staff_current_status: {
+          availability: 'available'
         },
         task_agents: {
           none: {
@@ -87,7 +92,6 @@ export const getDashboardStats = async (req, res, next) => {
     // 5. Top 3 In-Progress Tasks
     const inProgressTasks = await prisma.tasks.findMany({
       where: {
-        ...timeFilter,
         status: { in: ['delivery_assigned', 'delivery_accepted', 'picked_up', 'delivery_reassigned'] }
       },
       take: 3,
