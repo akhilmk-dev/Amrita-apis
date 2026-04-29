@@ -1,7 +1,7 @@
 import prisma from '../config/prisma.js';
 import { successResponse, ApiError } from '../utils/response.utils.js';
 import { getPaginationParams, getPaginatedResponse } from '../utils/pagination.utils.js';
-import { sendNotification } from '../utils/notification.utils.js';
+import { sendNotification, notifyAdmins } from '../utils/notification.utils.js';
 import { createAuditLog } from '../utils/audit.utils.js';
 
 /**
@@ -112,17 +112,13 @@ export const createTask = async (req, res, next) => {
       }
     });
 
-    // Notify Admin (Creator)
-    if (req.user?.user_id) {
-      await sendNotification({
-        user_id: req.user.user_id,
-        task_id: newTask.id,
-        type: 'task_created',
-        title: 'Task Created',
-        body: `Task #${newTask.task_number} has been created successfully.`,
-        role_key: req.user.role_key
-      });
-    }
+    // Notify All Admins
+    await notifyAdmins({
+      task_id: newTask.id,
+      type: 'task_created',
+      title: 'New Task Received',
+      body: `Task #${newTask.task_number} for patient ${newTask.patient_name} has been created.`
+    });
 
     // 3. Create Audit Log
     await createAuditLog({

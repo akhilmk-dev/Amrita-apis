@@ -121,3 +121,38 @@ export const sendNotification = async ({ user_id, task_id, type, title, body, ro
     // Don't throw — avoid breaking the main transaction
   }
 };
+
+/**
+ * Notify all admins about a general event
+ * @param {Object} params
+ * @param {number} [params.task_id]
+ * @param {string} params.type
+ * @param {string} params.title
+ * @param {string} params.body
+ */
+export const notifyAdmins = async ({ task_id, type, title, body }) => {
+  try {
+    // Find all users with admin or super_admin roles (role_id 1 or 2 based on DB check)
+    // In a more dynamic system, we'd query by role_key or permissions
+    const admins = await prisma.users.findMany({
+      where: {
+        role_id: { in: [1, 2] },
+        is_active: true
+      },
+      select: { id: true, role: { select: { role_key: true } } }
+    });
+
+    for (const admin of admins) {
+      await sendNotification({
+        user_id: admin.id,
+        task_id,
+        type,
+        title,
+        body,
+        role_key: admin.role?.role_key || 'admin'
+      });
+    }
+  } catch (error) {
+    console.error('[Notification] Error notifying admins:', error);
+  }
+};
