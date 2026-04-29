@@ -92,6 +92,48 @@ router.post('/', authMiddleware, checkPermission('locations', 'add'), validate(l
 
 /**
  * @swagger
+ * /api/v1/locations/list:
+ *   get:
+ *     summary: Get all active locations for dropdown
+ *     tags: [Admin Panel]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of all active locations (id, name, floor, tower)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       name:
+ *                         type: string
+ *                       floor:
+ *                         type: object
+ *                         properties:
+ *                           floor_name:
+ *                             type: string
+ *                           tower:
+ *                             type: object
+ *                             properties:
+ *                               name:
+ *                                 type: string
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/list', authMiddleware, checkPermission('locations', 'view'), locationController.getActiveLocationsList);
+
+/**
+ * @swagger
  * /api/v1/locations/{id}:
  *   get:
  *     summary: Get location by ID

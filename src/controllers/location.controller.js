@@ -102,6 +102,32 @@ export const getAllLocations = async (req, res, next) => {
 };
 
 /**
+ * Get all active locations for dropdown list
+ */
+export const getActiveLocationsList = async (req, res, next) => {
+  try {
+    const locations = await prisma.locations.findMany({
+      where: { is_active: true },
+      select: {
+        id: true,
+        name: true,
+        floor: {
+          select: {
+            floor_name: true,
+            tower: { select: { name: true } }
+          }
+        }
+      },
+      orderBy: { name: 'asc' }
+    });
+
+    return successResponse(res, locations, 'Active locations retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get location by ID
  */
 export const getLocationById = async (req, res, next) => {

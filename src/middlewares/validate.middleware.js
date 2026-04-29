@@ -13,9 +13,9 @@ export const validate = (schema) => (req, res, next) => {
       params: req.params,
     });
 
-    if (parsedData.body) req.body = parsedData.body;
-    if (parsedData.query) req.query = parsedData.query;
-    if (parsedData.params) req.params = parsedData.params;
+    if (parsedData.body) Object.assign(req.body, parsedData.body);
+    if (parsedData.query) Object.assign(req.query, parsedData.query);
+    if (parsedData.params) Object.assign(req.params, parsedData.params);
 
     next();
   } catch (error) {
