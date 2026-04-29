@@ -217,4 +217,17 @@ export const assignAgentsSchema = z.object({
     })).min(1, 'At least one agent must be assigned')
   }),
 });
+export const updateProfileSchema = z.object({
+  body: z.object({
+    name: z.string().optional(),
+    email: z.string().email('Invalid email address').optional(),
+    phone: z.string().optional().nullable(),
+  })
+});
 
+export const changePasswordSchema = z.object({
+  body: z.object({
+    old_password: requiredString('Old password'),
+    new_password: z.string().min(6, 'New password must be at least 6 characters')
+  })
+});

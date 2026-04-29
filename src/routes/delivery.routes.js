@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as taskController from '../controllers/task.controller.js';
 import * as shiftController from '../controllers/shift.controller.js';
+import * as profileController from '../controllers/profile.controller.js';
 import authMiddleware from '../middlewares/auth.middleware.js';
 import { checkPermission } from '../middlewares/permission.middleware.js';
 
@@ -12,6 +13,22 @@ const router = Router();
  *   name: Delivery App
  *   description: APIs for delivery staff to manage their tasks and shifts
  */
+
+// --- Profile ---
+
+/**
+ * @swagger
+ * /api/v1/delivery/profile:
+ *   get:
+ *     summary: Get current delivery staff profile
+ *     tags: [Delivery App]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Staff profile retrieved successfully
+ */
+router.get('/profile', authMiddleware, profileController.getDeliveryProfile);
 
 // --- Shift / Taping (Delivery Staff Only) ---
 

@@ -11,6 +11,7 @@ import staffRoutes from './staff.routes.js';
 import rejectionReasonRoutes from './rejectionReason.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
 import deliveryRoutes from './delivery.routes.js';
+import profileRoutes from './profile.routes.js';
 import notificationRoutes from './notification.routes.js';
 import authMiddleware from '../middlewares/auth.middleware.js';
 import { restrictRole } from '../middlewares/permission.middleware.js';
@@ -21,6 +22,7 @@ const v1Router = Router();
 // v1 Routes
 v1Router.use('/auth', authRoutes);
 v1Router.use('/delivery', authMiddleware, deliveryRoutes);
+v1Router.use('/profile', authMiddleware, profileRoutes);
 
 // Protect all admin/standard routes
 const adminGate = restrictRole(['delivery_staff']);
