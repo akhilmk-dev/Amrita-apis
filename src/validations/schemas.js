@@ -177,6 +177,7 @@ export const taskSchema = z.object({
     date_time: z.string().optional().nullable(),
     specify: z.string().optional().nullable(),
     purpose_of_transfer: z.string().min(1, 'Purpose of Transfer is required'),
+    asset_type: z.string().min(1, 'Asset Type is required'),
     requestor_name: z.string().min(1, 'Requestor Name is required'),
     requestor_phone_number: z.string().min(1, 'Requestor Phone Number is required'),
     requestor_extension_number: z.string().optional().nullable(),
@@ -192,6 +193,7 @@ export const updateTaskSchema = z.object({
     date_time: z.string().optional().nullable(),
     specify: z.string().optional().nullable(),
     purpose_of_transfer: z.string().optional(),
+    asset_type: z.string().optional(),
     remarks: z.string().optional().nullable(),
   }),
 });

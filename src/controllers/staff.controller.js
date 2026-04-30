@@ -2,25 +2,33 @@ import prisma from '../config/prisma.js';
 import { successResponse, ApiError } from '../utils/response.utils.js';
 import { getPaginationParams, getPaginatedResponse } from '../utils/pagination.utils.js';
 import bcrypt from 'bcryptjs';
+import dayjs from 'dayjs';
 
 /**
  * Get all available delivery staff
  */
 export const getAvailableStaff = async (req, res, next) => {
   try {
+    const todayStr = dayjs().format('YYYY-MM-DD');
+
     const availableStaff = await prisma.users.findMany({
       where: {
         is_active: true,
         role: {
           role_key: 'delivery_staff'
         },
-        // Layer 1: Exclude those explicitly marked as busy in status table
-        NOT: {
-          staff_current_status: {
-            availability: { in: ['on_job', 'on_break', 'off_shift'] }
+        // Must have an active shift started today
+        staff_shifts: {
+          some: {
+            shift_date: new Date(todayStr),
+            is_complete: false
           }
         },
-        // Layer 2: Exclude those with active assignments in task_agents
+        // Must be explicitly marked as available in status table
+        staff_current_status: {
+          availability: 'available'
+        },
+        // Must not have any active task assignments
         task_agents: {
           none: {
             agent_status: { in: ['pending', 'accepted', 'picked_up'] }

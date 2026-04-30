@@ -28,7 +28,7 @@ const router = Router();
  *         application/json:
  *           schema:
  *             type: object
- *             required: [meta_flow_id, patient_category, patient_mrd, patient_name, phone_number, pickup_location_id, destination_location_id, purpose_of_transfer, requestor_name, requestor_phone_number]
+ *             required: [meta_flow_id, patient_category, patient_mrd, patient_name, phone_number, pickup_location_id, destination_location_id, purpose_of_transfer, asset_type, requestor_name, requestor_phone_number]
  *             properties:
  *               meta_flow_id:
  *                 type: string
@@ -56,6 +56,10 @@ const router = Router();
  *               specify:
  *                 type: string
  *                 description: Specific asset or notes (mapped to asset_type_notes)
+ *               asset_type:
+ *                 type: string
+ *                 description: Type of asset (e.g., Trolley, Wheelchair)
+ *                 example: Trolley
  *               purpose_of_transfer:
  *                 type: string
  *               requestor_name:
@@ -167,6 +171,8 @@ const router = Router();
  *               specify:
  *                 type: string
  *               purpose_of_transfer:
+ *                 type: string
+ *               asset_type:
  *                 type: string
  *               remarks:
  *                 type: string

@@ -19,6 +19,7 @@ const sendOneSignalPush = async ({ appId, apiKey, externalUserIds, title, body, 
     include_aliases: {
       external_id: externalUserIds.map(String)
     },
+    include_external_user_ids: externalUserIds.map(String),
     target_channel: 'push',
     headings: { en: title },
     contents: { en: body || title },
@@ -80,7 +81,11 @@ export const sendNotification = async ({ user_id, task_id, type, title, body, ro
     const staffAppId = process.env.ONESIGNAL_STAFF_APP_ID;
     const staffApiKey = process.env.ONESIGNAL_STAFF_API_KEY;
 
+    console.log(`[Notification] Role: ${role_key}, IsAdmin: ${isAdmin}, IsStaff: ${isStaff}`);
+    console.log(`[Notification] Keys: AdminApp: ${adminAppId ? 'Yes' : 'No'}, StaffApp: ${staffAppId ? 'Yes' : 'No'}`);
+
     if (isAdmin && adminAppId && adminApiKey) {
+      console.log(`[Notification] Sending Push to Admin: ${user_id}`);
       sendOneSignalPush({
         appId: adminAppId,
         apiKey: adminApiKey,
@@ -91,12 +96,13 @@ export const sendNotification = async ({ user_id, task_id, type, title, body, ro
           type, 
           task_id: task_id ? String(task_id) : null,
           screen: 'TaskDetails',
-          path: 'com.amritha_admin/TaskDetails'
+          path: task_id ? `com.amritha_admin://TaskDetails/${task_id}` : 'com.amritha_admin://TaskDetails'
         }
       });
     }
 
     if (isStaff && staffAppId && staffApiKey) {
+      console.log(`[Notification] Sending Push to Staff: ${user_id}`);
       sendOneSignalPush({
         appId: staffAppId,
         apiKey: staffApiKey,
@@ -107,7 +113,7 @@ export const sendNotification = async ({ user_id, task_id, type, title, body, ro
           type, 
           task_id: task_id ? String(task_id) : null,
           screen: 'TaskDetails',
-          path: 'com.amritha_admin/TaskDetails'
+          path: task_id ? `com.amritha_admin://TaskDetails/${task_id}` : 'com.amritha_admin://TaskDetails'
         }
       });
     }
@@ -151,6 +157,8 @@ export const notifyAdmins = async ({ task_id, type, title, body }) => {
       },
       select: { id: true, role: { select: { role_key: true } } }
     });
+
+    console.log(`[Notification] Found ${admins.length} admins to notify`);
 
     for (const admin of admins) {
       await sendNotification({

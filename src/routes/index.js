@@ -24,6 +24,10 @@ v1Router.use('/auth', authRoutes);
 v1Router.use('/delivery', authMiddleware, deliveryRoutes);
 v1Router.use('/profile', authMiddleware, profileRoutes);
 
+// Shared / Publicly Authenticated Routes (MUST be before adminGate catch-all)
+v1Router.use('/rejection-reasons', authMiddleware, rejectionReasonRoutes);
+v1Router.use('/notifications', authMiddleware, notificationRoutes);
+
 // Protect all admin/standard routes
 const adminGate = restrictRole(['delivery_staff']);
 
@@ -35,11 +39,7 @@ v1Router.use('/locations', authMiddleware, adminGate, locationRoutes);
 v1Router.use('/staff-bays', authMiddleware, adminGate, staffBayRoutes);
 v1Router.use('/tasks', authMiddleware, adminGate, taskRoutes);
 v1Router.use('/staff', authMiddleware, adminGate, staffRoutes);
-v1Router.use('/rejection-reasons', authMiddleware, adminGate, rejectionReasonRoutes);
 v1Router.use('/dashboard', authMiddleware, adminGate, dashboardRoutes);
-
-// Notifications - accessible to all authenticated users (admins + delivery staff)
-v1Router.use('/notifications', authMiddleware, notificationRoutes);
 
 // Main router
 router.use('/v1', v1Router);

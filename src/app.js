@@ -21,8 +21,23 @@ const app = express();
 app.set('trust proxy', 1);
 
 // Middlewares
+const allowedOrigins = [
+  'http://localhost:5000',
+  'http://localhost:5173', // Standard Vite port
+  'https://amrita-apis.onrender.com',
+  'https://amrita-pms.onrender.com' // Assuming this is the frontend
+];
+
 app.use(cors({
-  origin: '*', // For development. For production, specify your frontend URL
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
   credentials: true

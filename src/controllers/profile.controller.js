@@ -47,7 +47,7 @@ export const getDeliveryProfile = async (req, res, next) => {
         role: true,
         staff_current_status: {
           include: {
-            current_bay: true
+            bay: true
           }
         }
       }
