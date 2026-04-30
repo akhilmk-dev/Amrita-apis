@@ -1162,6 +1162,8 @@ export const updateAgentStatusAdmin = async (req, res, next) => {
           rejection_notes: status === 'rejected' ? notes : undefined
         }
       });
+    }, {
+      timeout: 15000 
     });
 
     return successResponse(res, null, `Agent status updated to ${status} successfully`);
