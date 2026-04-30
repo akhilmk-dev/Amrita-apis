@@ -229,7 +229,7 @@ const router = Router();
  * /api/v1/tasks/{id}/agents:
  *   post:
  *     summary: Assign or Reassign agents to a task (Admin)
- *     description: If replace_staff_id is provided, it is treated as a reassignment (target count stays same). If omitted, it is a new assignment (target count increments).
+ *     description: Sets the explicit required staff count and assigns agents. If a replace_staff_id is provided, it links the new agent to the previous failed attempt.
  *     tags: [Tasks]
  *     security:
  *       - bearerAuth: []
@@ -245,8 +245,12 @@ const router = Router();
  *         application/json:
  *           schema:
  *             type: object
- *             required: [agents]
+ *             required: [required_agents, agents]
  *             properties:
+ *               required_agents:
+ *                 type: integer
+ *                 description: Explicit number of staff required for this task
+ *                 example: 1
  *               agents:
  *                 type: array
  *                 items:
@@ -306,6 +310,9 @@ const router = Router();
  *               status:
  *                 type: string
  *                 enum: [accepted, picked_up, delivered, rejected]
+ *               rejection_reason_id:
+ *                 type: integer
+ *                 description: Required if status is 'rejected'
  *               notes:
  *                 type: string
  *     responses:
