@@ -568,6 +568,10 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id, slot_number) 
       }
     });
 
+    if (!agent) {
+      console.log(`[Timeout] No pending agent found for Task ${taskId}, Staff ${staff_id}, Slot ${slot_number}. (May have been already accepted/rejected)`);
+    }
+
     if (agent) {
       console.log(`[Timeout] EXECUTING timeout for Task ${taskId}, Staff ${staff_id}, Slot ${slot_number}`);
       await prisma.$transaction(async (tx) => {
@@ -953,6 +957,8 @@ const syncTaskStatus = async (taskId, tx) => {
   const activeAgents = agents.filter(a => !['rejected', 'timeout'].includes(a.agent_status));
   const activeCount = activeAgents.length;
   
+  console.log(`[Sync] Task ${taskId}: Required=${task.required_agents}, ActiveCount=${activeCount}, Statuses=${activeAgents.map(a => a.agent_status).join(',')}`);
+
   let newStatus = task.status;
 
   // 1. If any agent failed and hasn't been replaced (Active < Target)
