@@ -464,7 +464,14 @@ export const updateTaskAgents = async (req, res, next) => {
     if (!task) throw new ApiError('Task not found', 404);
 
     await prisma.$transaction(async (tx) => {
-      // 1. Get current max slot once to avoid repeated queries in loop
+      // 1. Re-fetch task inside transaction to get absolute latest required_agents
+      const freshTask = await tx.tasks.findUnique({ 
+        where: { id: taskId },
+        lock: { mode: 'update' } // Prevent concurrent updates during this transaction
+      });
+      if (!freshTask) throw new ApiError('Task not found', 404);
+
+      // 2. Get current max slot to avoid collisions
       const existingAgents = await tx.task_agents.findMany({
         where: { task_id: taskId },
         select: { slot_number: true }
@@ -474,7 +481,7 @@ export const updateTaskAgents = async (req, res, next) => {
       for (const agent of agents) {
         const targetSlot = nextSlot++;
 
-        // If not replacing someone, increment required_agents
+        // If not replacing someone, increment required_agents in DB
         if (!agent.replace_staff_id) {
           await tx.tasks.update({
             where: { id: taskId },
@@ -482,7 +489,7 @@ export const updateTaskAgents = async (req, res, next) => {
           });
         }
 
-        // Create Task Agent (Always a new row)
+        // Create Task Agent
         await tx.task_agents.create({
           data: {
             task_id: taskId,
@@ -511,7 +518,7 @@ export const updateTaskAgents = async (req, res, next) => {
           data: {
             task_id: taskId,
             event_type: 'staff_assigned',
-            from_status: task.status,
+            from_status: freshTask.status,
             to_status: 'delivery_assigned',
             actor_id,
             actor_type: 'admin',
@@ -525,11 +532,11 @@ export const updateTaskAgents = async (req, res, next) => {
           task_id: taskId,
           type: 'task_assigned',
           title: 'New Job Assigned',
-          body: `You have been assigned to Task ${task.task_number}. Please accept within 60 seconds.`,
+          body: `You have been assigned to Task ${freshTask.task_number}. Please accept within 60 seconds.`,
           role_key: 'delivery_staff'
         }, tx);
 
-        // Trigger 60s timeout timer (Outside transaction context)
+        // Trigger 60s timeout timer
         console.log(`[Assign] Setting 60s timer for Task ${taskId}, Staff ${agent.staff_id}, Slot ${targetSlot}`);
         setTimeout(() => handleAssignmentTimeout(taskId, agent.staff_id, actor_id, targetSlot), 60000);
       }
@@ -538,7 +545,7 @@ export const updateTaskAgents = async (req, res, next) => {
       console.log(`[Assign] Syncing task status for ${taskId}`);
       await syncTaskStatus(taskId, tx);
     }, {
-      timeout: 15000 // Increase timeout to 15s to prevent "Transaction not found" on slow connections/OneSignal
+      timeout: 15000 
     });
 
     return successResponse(res, null, 'Agents updated successfully');
