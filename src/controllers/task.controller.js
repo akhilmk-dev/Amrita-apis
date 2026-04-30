@@ -589,6 +589,8 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id, slot_number) 
     if (agent) {
       console.log(`[Timeout] EXECUTING timeout for Task ${taskId}, Staff ${staff_id}, Slot ${slot_number}`);
       await prisma.$transaction(async (tx) => {
+        const freshTask = await tx.tasks.findUnique({ where: { id: taskId }, select: { status: true, task_number: true } });
+
         // 1. Mark as timeout in task_agents
         await tx.task_agents.updateMany({
           where: { task_id: taskId, staff_id, slot_number, agent_status: 'pending' },
@@ -604,16 +606,16 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id, slot_number) 
           }
         });
 
-        // 3. Recalculate Task Status (will move to delivery_reassigned because Active < Target)
-        await syncTaskStatus(taskId, tx);
+        // 3. Recalculate Task Status 
+        const finalTaskStatus = await syncTaskStatus(taskId, tx);
 
         // 4. Timeline
         await tx.task_timeline.create({
           data: {
             task_id: taskId,
             event_type: 'staff_timeout',
-            from_status: 'delivery_assigned', // Fallback
-            to_status: 'delivery_reassigned',
+            from_status: freshTask.status, 
+            to_status: finalTaskStatus,
             actor_id: staff_id,
             actor_type: 'system',
             staff_id
@@ -621,17 +623,18 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id, slot_number) 
         });
 
         // 5. Notify Admin
-        const taskDetails = await tx.tasks.findUnique({ where: { id: taskId }, select: { task_number: true } });
-        await sendNotification({
-          user_id: admin_id,
-          task_id: taskId,
-          type: 'staff_timeout',
-          title: 'Staff Assignment Timeout',
-          body: `Staff member (ID: ${staff_id}) failed to accept task ${taskDetails?.task_number} within 60s.`,
-          role_key: 'admin'
-        }, tx);
+        if (admin_id) {
+          await sendNotification({
+            user_id: admin_id,
+            task_id: taskId,
+            type: 'staff_timeout',
+            title: 'Staff Assignment Timeout',
+            body: `Staff member (ID: ${staff_id}) failed to accept task ${freshTask?.task_number} within 60s.`,
+            role_key: 'admin'
+          }, tx);
+        }
       });
-      console.log(`Assignment timeout handled for Task ${taskId}, Staff ${staff_id}`);
+      console.log(`Assignment timeout handled successfully for Task ${taskId}, Staff ${staff_id}`);
     }
   } catch (error) {
     console.error('Error handling assignment timeout:', error);
