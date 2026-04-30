@@ -398,6 +398,7 @@ enum task_timeline_event {
   all_delivered
   completed
   cancelled
+  staff_reassigned
   note_added
 }
 

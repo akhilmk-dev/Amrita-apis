@@ -3,7 +3,7 @@ import * as taskController from '../controllers/task.controller.js';
 import authMiddleware from '../middlewares/auth.middleware.js';
 import { checkPermission } from '../middlewares/permission.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { taskSchema, updateTaskSchema, taskQuerySchema, assignAgentsSchema, adminAgentStatusSchema } from '../validations/schemas.js';
+import { taskSchema, updateTaskSchema, taskQuerySchema, assignAgentsSchema, reassignAgentsSchema, adminAgentStatusSchema } from '../validations/schemas.js';
 
 const router = Router();
 
@@ -262,12 +262,45 @@ const router = Router();
  *                     agent_label:
  *                       type: string
  *                       example: Primary
- *                     replace_staff_id:
- *                       type: integer
- *                       description: The ID of the failed staff member being replaced
  *     responses:
  *       200:
- *         description: Agents updated successfully
+ *         description: Staff assigned successfully
+ *
+ * /api/v1/tasks/{id}/reassign:
+ *   post:
+ *     summary: Reassign agents to a task (Admin)
+ *     description: Specifically used to replace staff when the task is in 'delivery_reassigned' status. Logs 'staff_reassigned' in the timeline.
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [agents]
+ *             properties:
+ *               agents:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [staff_id]
+ *                   properties:
+ *                     staff_id:
+ *                       type: integer
+ *                     agent_label:
+ *                       type: string
+ *                       example: Primary
+ *     responses:
+ *       200:
+ *         description: Staff reassigned successfully
  *
  * /api/v1/tasks/{id}/agents/{staff_id}/next-statuses:
  *   get:
@@ -326,6 +359,7 @@ router.post('/', authMiddleware, checkPermission('tasks', 'create'), validate(ta
 router.get('/', authMiddleware, checkPermission('tasks', 'view'), validate(taskQuerySchema), taskController.getAllTasks);
 router.get('/:id', authMiddleware, checkPermission('tasks', 'view'), taskController.getTaskById);
 router.post('/:id/agents', authMiddleware, checkPermission('tasks', 'assign'), validate(assignAgentsSchema), taskController.updateTaskAgents);
+router.post('/:id/reassign', authMiddleware, checkPermission('tasks', 'assign'), validate(reassignAgentsSchema), taskController.reassignTaskAgents);
 router.put('/:id', authMiddleware, checkPermission('tasks', 'update_status'), validate(updateTaskSchema), taskController.updateTask);
 router.post('/:id/cancel', authMiddleware, checkPermission('tasks', 'cancel'), taskController.cancelTask);
 

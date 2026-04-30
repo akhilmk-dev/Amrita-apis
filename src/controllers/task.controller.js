@@ -450,103 +450,118 @@ export const deleteTask = async (req, res, next) => {
   }
 };
 
+/**
+ * Internal Helper: Common assignment logic for Assign and Reassign
+ */
+const performStaffAssignment = async (taskId, agents, actor_id, isReassignment = false) => {
+  return await prisma.$transaction(async (tx) => {
+    const freshTask = await tx.tasks.findUnique({ where: { id: taskId } });
+    if (!freshTask) throw new ApiError('Task not found', 404);
+
+    const existingAgents = await tx.task_agents.findMany({
+      where: { task_id: taskId },
+      select: { slot_number: true }
+    });
+    let nextSlot = existingAgents.reduce((max, a) => Math.max(max, a.slot_number), 0) + 1;
+
+    for (const agent of agents) {
+      const targetSlot = nextSlot++;
+
+      // 1. Create Task Agent
+      await tx.task_agents.create({
+        data: {
+          task_id: taskId,
+          staff_id: agent.staff_id,
+          agent_label: agent.agent_label || 'Agent',
+          slot_number: targetSlot,
+          assigned_by: actor_id,
+          agent_status: 'pending'
+        }
+      });
+
+      // 2. Record History
+      await tx.task_assignment_history.create({
+        data: {
+          task_id: taskId,
+          staff_id: agent.staff_id,
+          slot_number: targetSlot,
+          assigned_by: actor_id,
+          assignment_round: isReassignment ? 2 : 1,
+          response: 'pending'
+        }
+      });
+
+      // 3. Timeline
+      await tx.task_timeline.create({
+        data: {
+          task_id: taskId,
+          event_type: isReassignment ? 'staff_reassigned' : 'staff_assigned',
+          from_status: freshTask.status,
+          to_status: 'delivery_assigned', // syncTaskStatus will refine this
+          actor_id,
+          actor_type: 'admin',
+          staff_id: agent.staff_id,
+          notes: isReassignment ? 'Staff reassigned' : 'Staff assigned'
+        }
+      });
+
+      // 4. Notification
+      await sendNotification({
+        user_id: agent.staff_id,
+        task_id: taskId,
+        type: 'task_assigned',
+        title: isReassignment ? 'Job Reassigned' : 'New Job Assigned',
+        body: `You have been assigned to Task ${freshTask.task_number}. Please accept within 60 seconds.`,
+        role_key: 'delivery_staff'
+      }, tx);
+
+      // 5. Trigger 60s timeout timer
+      console.log(`[${isReassignment ? 'Reassign' : 'Assign'}] Setting 60s timer for Task ${taskId}, Staff ${agent.staff_id}, Slot ${targetSlot}`);
+      setTimeout(() => handleAssignmentTimeout(taskId, agent.staff_id, actor_id, targetSlot), 60000);
+    }
+
+    // 6. Sync Task Status
+    return await syncTaskStatus(taskId, tx);
+  }, {
+    timeout: 15000 
+  });
+};
+
+/**
+ * Initial Assignment (Sets Quota)
+ */
 export const updateTaskAgents = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { agents } = req.body; // Array of { staff_id, agent_label, replace_staff_id }
+    const { required_agents, agents } = req.body;
     const actor_id = req.user?.user_id;
-
     const taskId = parseInt(id);
-    console.log(`[Assign] Starting assignment for Task ${taskId}. Agents:`, agents);
-    const task = await prisma.tasks.findUnique({ 
-      where: { id: taskId }
-    });
-    if (!task) throw new ApiError('Task not found', 404);
 
-    await prisma.$transaction(async (tx) => {
-      // 1. Re-fetch task inside transaction to get absolute latest required_agents
-      const freshTask = await tx.tasks.findUnique({ 
-        where: { id: taskId }
-      });
-      if (!freshTask) throw new ApiError('Task not found', 404);
-
-      // 2. Set explicit quota and Get current max slot
-      await tx.tasks.update({
-        where: { id: taskId },
-        data: { required_agents: req.body.required_agents }
-      });
-
-      const existingAgents = await tx.task_agents.findMany({
-        where: { task_id: taskId },
-        select: { slot_number: true }
-      });
-      let nextSlot = existingAgents.reduce((max, a) => Math.max(max, a.slot_number), 0) + 1;
-
-      for (const agent of agents) {
-        const targetSlot = nextSlot++;
-        
-        // Removed increment logic - using explicit quota above
-
-        // Create Task Agent
-        await tx.task_agents.create({
-          data: {
-            task_id: taskId,
-            staff_id: agent.staff_id,
-            agent_label: agent.agent_label || 'Agent',
-            slot_number: targetSlot,
-            assigned_by: actor_id,
-            agent_status: 'pending'
-          }
-        });
-
-        // Record History
-        await tx.task_assignment_history.create({
-          data: {
-            task_id: taskId,
-            staff_id: agent.staff_id,
-            slot_number: targetSlot,
-            assigned_by: actor_id,
-            assignment_round: 1,
-            response: 'pending'
-          }
-        });
-
-        // Timeline
-        await tx.task_timeline.create({
-          data: {
-            task_id: taskId,
-            event_type: 'staff_assigned',
-            from_status: freshTask.status,
-            to_status: 'delivery_assigned',
-            actor_id,
-            actor_type: 'admin',
-            staff_id: agent.staff_id
-          }
-        });
-
-        // Notification
-        await sendNotification({
-          user_id: agent.staff_id,
-          task_id: taskId,
-          type: 'task_assigned',
-          title: 'New Job Assigned',
-          body: `You have been assigned to Task ${freshTask.task_number}. Please accept within 60 seconds.`,
-          role_key: 'delivery_staff'
-        }, tx);
-
-        // Trigger 60s timeout timer
-        console.log(`[Assign] Setting 60s timer for Task ${taskId}, Staff ${agent.staff_id}, Slot ${targetSlot}`);
-        setTimeout(() => handleAssignmentTimeout(taskId, agent.staff_id, actor_id, targetSlot), 60000);
-      }
-
-      // Sync Task Status
-      console.log(`[Assign] Syncing task status for ${taskId}`);
-      await syncTaskStatus(taskId, tx);
-    }, {
-      timeout: 15000 
+    // Set Quota first
+    await prisma.tasks.update({
+      where: { id: taskId },
+      data: { required_agents }
     });
 
-    return successResponse(res, null, 'Agents updated successfully');
+    await performStaffAssignment(taskId, agents, actor_id, false);
+    return successResponse(res, null, 'Staff assigned successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Reassignment (Replaces failed staff)
+ */
+export const reassignTaskAgents = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { agents } = req.body;
+    const actor_id = req.user?.user_id;
+    const taskId = parseInt(id);
+
+    await performStaffAssignment(taskId, agents, actor_id, true);
+    return successResponse(res, null, 'Staff reassigned successfully');
   } catch (error) {
     next(error);
   }

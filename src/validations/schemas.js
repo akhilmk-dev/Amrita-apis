@@ -215,8 +215,16 @@ export const assignAgentsSchema = z.object({
     required_agents: z.number().int().min(1, 'At least 1 staff is required'),
     agents: z.array(z.object({
       staff_id: z.number().int(),
-      agent_label: z.string().optional(),
-      replace_staff_id: z.number().int().optional()
+      agent_label: z.string().optional()
+    })).min(1, 'At least one agent must be assigned')
+  }),
+});
+
+export const reassignAgentsSchema = z.object({
+  body: z.object({
+    agents: z.array(z.object({
+      staff_id: z.number().int(),
+      agent_label: z.string().optional()
     })).min(1, 'At least one agent must be assigned')
   }),
 });
