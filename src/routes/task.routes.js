@@ -3,7 +3,7 @@ import * as taskController from '../controllers/task.controller.js';
 import authMiddleware from '../middlewares/auth.middleware.js';
 import { checkPermission } from '../middlewares/permission.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { taskSchema, updateTaskSchema, taskQuerySchema, assignAgentsSchema } from '../validations/schemas.js';
+import { taskSchema, updateTaskSchema, taskQuerySchema, assignAgentsSchema, adminAgentStatusSchema } from '../validations/schemas.js';
 
 const router = Router();
 
@@ -229,6 +229,7 @@ const router = Router();
  * /api/v1/tasks/{id}/agents:
  *   post:
  *     summary: Assign or Reassign agents to a task (Admin)
+ *     description: If replace_staff_id is provided, it is treated as a reassignment (target count stays same). If omitted, it is a new assignment (target count increments).
  *     tags: [Tasks]
  *     security:
  *       - bearerAuth: []
@@ -250,23 +251,70 @@ const router = Router();
  *                 type: array
  *                 items:
  *                   type: object
- *                   required: [staff_id, slot_number]
+ *                   required: [staff_id]
  *                   properties:
  *                     staff_id:
  *                       type: integer
  *                     agent_label:
  *                       type: string
  *                       example: Primary
- *                     slot_number:
+ *                     replace_staff_id:
  *                       type: integer
- *                       example: 1
+ *                       description: The ID of the failed staff member being replaced
  *     responses:
  *       200:
  *         description: Agents updated successfully
  *
+ * /api/v1/tasks/{id}/agents/{staff_id}/next-statuses:
+ *   get:
+ *     summary: Get allowed next statuses for an agent (Admin)
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *       - in: path
+ *         name: staff_id
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: Array of valid statuses
+ *
+ * /api/v1/tasks/{id}/agents/{staff_id}/status:
+ *   patch:
+ *     summary: Override agent status (Admin Only)
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *       - in: path
+ *         name: staff_id
+ *         required: true
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [accepted, picked_up, delivered, rejected]
+ *               notes:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Status updated successfully
+ *
  * /api/v1/tasks/{id}/reject:
  *   post:
- *     summary: Reject a task assignment (Admin/Super Admin)
+ *     summary: Reject task assignment (Delivery Staff)
  *     tags: [Tasks]
  *     security:
  *       - bearerAuth: []
@@ -292,7 +340,7 @@ const router = Router();
  *
  * /api/v1/tasks/{id}/accept:
  *   post:
- *     summary: Accept a task assignment (Admin/Super Admin)
+ *     summary: Accept task assignment (Delivery Staff)
  *     tags: [Tasks]
  *     security:
  *       - bearerAuth: []
@@ -308,7 +356,7 @@ const router = Router();
  *
  * /api/v1/tasks/{id}/pickup:
  *   post:
- *     summary: Mark task as picked up (Admin/Super Admin)
+ *     summary: Mark task as picked up (Delivery Staff)
  *     tags: [Tasks]
  *     security:
  *       - bearerAuth: []
@@ -324,7 +372,7 @@ const router = Router();
  *
  * /api/v1/tasks/{id}/complete:
  *   post:
- *     summary: Mark task as completed/delivered (Admin/Super Admin)
+ *     summary: Mark task as completed (Delivery Staff)
  *     tags: [Tasks]
  *     security:
  *       - bearerAuth: []
@@ -353,7 +401,7 @@ router.post('/:id/cancel', authMiddleware, checkPermission('tasks', 'cancel'), t
 
 // Admin Agent Status Management
 router.get('/:id/agents/:staff_id/next-statuses', authMiddleware, checkPermission('tasks', 'view'), taskController.getAgentNextStatuses);
-router.patch('/:id/agents/:staff_id/status', authMiddleware, checkPermission('tasks', 'update_status'), taskController.updateAgentStatusAdmin);
+router.patch('/:id/agents/:staff_id/status', authMiddleware, checkPermission('tasks', 'update_status'), validate(adminAgentStatusSchema), taskController.updateAgentStatusAdmin);
 
 
 
