@@ -11,7 +11,7 @@ import * as sseManager from './sse.manager.js';
  * @param {string} params.body
  * @param {Object} params.data - Additional payload data
  */
-const sendOneSignalPush = async ({ appId, apiKey, externalUserIds, title, body, data = {} }) => {
+const sendOneSignalPush = async ({ appId, apiKey, externalUserIds, title, body, url, data = {} }) => {
   if (!appId || !apiKey) return; // Skip if credentials not configured
 
   const payload = {
@@ -23,6 +23,7 @@ const sendOneSignalPush = async ({ appId, apiKey, externalUserIds, title, body, 
     target_channel: 'push',
     headings: { en: title },
     contents: { en: body || title },
+    url: url || null,
     data
   };
 
@@ -84,6 +85,8 @@ export const sendNotification = async ({ user_id, task_id, type, title, body, ro
     console.log(`[Notification] Role: ${role_key}, IsAdmin: ${isAdmin}, IsStaff: ${isStaff}`);
     console.log(`[Notification] Keys: AdminApp: ${adminAppId ? 'Yes' : 'No'}, StaffApp: ${staffAppId ? 'Yes' : 'No'}`);
 
+    const deepLink = task_id ? `com.amritha_admin://TaskDetails/${task_id}` : 'com.amritha_admin://TaskDetails';
+
     if (isAdmin && adminAppId && adminApiKey) {
       console.log(`[Notification] Sending Push to Admin: ${user_id}`);
       sendOneSignalPush({
@@ -92,11 +95,12 @@ export const sendNotification = async ({ user_id, task_id, type, title, body, ro
         externalUserIds: [String(user_id)],
         title,
         body,
+        url: deepLink,
         data: { 
           type, 
           task_id: task_id ? String(task_id) : null,
           screen: 'TaskDetails',
-          path: task_id ? `com.amritha_admin://TaskDetails/${task_id}` : 'com.amritha_admin://TaskDetails'
+          path: deepLink
         }
       });
     }
@@ -109,11 +113,12 @@ export const sendNotification = async ({ user_id, task_id, type, title, body, ro
         externalUserIds: [String(user_id)],
         title,
         body,
+        url: deepLink,
         data: { 
           type, 
           task_id: task_id ? String(task_id) : null,
           screen: 'TaskDetails',
-          path: task_id ? `com.amritha_admin://TaskDetails/${task_id}` : 'com.amritha_admin://TaskDetails'
+          path: deepLink
         }
       });
     }
