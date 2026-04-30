@@ -457,6 +457,7 @@ export const updateTaskAgents = async (req, res, next) => {
     const actor_id = req.user?.user_id;
 
     const taskId = parseInt(id);
+    console.log(`[Assign] Starting assignment for Task ${taskId}. Agents:`, agents);
     const task = await prisma.tasks.findUnique({ 
       where: { id: taskId }
     });
@@ -529,10 +530,12 @@ export const updateTaskAgents = async (req, res, next) => {
         }, tx);
 
         // Trigger 60s timeout timer (Outside transaction context)
+        console.log(`[Assign] Setting 60s timer for Task ${taskId}, Staff ${agent.staff_id}, Slot ${targetSlot}`);
         setTimeout(() => handleAssignmentTimeout(taskId, agent.staff_id, actor_id, targetSlot), 60000);
       }
 
       // Sync Task Status
+      console.log(`[Assign] Syncing task status for ${taskId}`);
       await syncTaskStatus(taskId, tx);
     }, {
       timeout: 15000 // Increase timeout to 15s to prevent "Transaction not found" on slow connections/OneSignal
@@ -548,6 +551,7 @@ export const updateTaskAgents = async (req, res, next) => {
  * Handle Assignment Timeout (60s Background Timer)
  */
 const handleAssignmentTimeout = async (taskId, staff_id, admin_id, slot_number) => {
+  console.log(`[Timeout] Checking timeout for Task ${taskId}, Staff ${staff_id}, Slot ${slot_number}`);
   try {
     const agent = await prisma.task_agents.findFirst({
       where: { 
@@ -559,6 +563,7 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id, slot_number) 
     });
 
     if (agent) {
+      console.log(`[Timeout] EXECUTING timeout for Task ${taskId}, Staff ${staff_id}, Slot ${slot_number}`);
       await prisma.$transaction(async (tx) => {
         // 1. Mark as timeout in task_agents
         await tx.task_agents.updateMany({
