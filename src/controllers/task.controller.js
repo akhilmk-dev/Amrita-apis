@@ -1062,12 +1062,31 @@ export const getAgentNextStatuses = async (req, res, next) => {
     const { id, staff_id } = req.params;
     const agent = await prisma.task_agents.findFirst({
       where: { task_id: parseInt(id), staff_id: parseInt(staff_id) },
-      orderBy: { slot_number: 'desc' }
+      orderBy: { slot_number: 'desc' },
+      include: {
+        task: {
+          select: { status: true }
+        }
+      }
     });
 
     if (!agent) throw new ApiError('Agent assignment not found', 404);
 
-    const nextStatuses = getValidTransitions(agent.agent_status);
+    let nextStatuses = getValidTransitions(agent.agent_status);
+
+    // Apply multi-agent synchronization logic
+    if (agent.agent_status === 'accepted') {
+      // Cannot pick up until task is at least delivery_accepted
+      if (!['delivery_accepted', 'picked_up', 'completed'].includes(agent.task.status)) {
+        nextStatuses = nextStatuses.filter(s => s !== 'picked_up');
+      }
+    } else if (agent.agent_status === 'picked_up') {
+      // Cannot deliver until task is at least picked_up
+      if (!['picked_up', 'completed'].includes(agent.task.status)) {
+        nextStatuses = nextStatuses.filter(s => s !== 'delivered');
+      }
+    }
+
     return successResponse(res, nextStatuses, 'Next statuses retrieved successfully');
   } catch (error) {
     next(error);
