@@ -85,7 +85,8 @@ const performLogin = async (email, password, expectedRoleKeys = null) => {
     user_id: user.id,
     role_id: user.role_id,
     role_key: user.role.role_key,
-    role_name: user.role.name
+    role_name: user.role.name,
+    permissions: permissions // Added permissions to payload
   };
 
   const accessToken = generateAccessToken(payload);
@@ -204,11 +205,35 @@ export const refreshToken = async (req, res, next) => {
       throw new ApiError('Invalid or expired refresh token', 401);
     }
 
+    const user = await prisma.users.findUnique({
+      where: { id: decoded.user_id },
+      include: { 
+        role: {
+          include: {
+            role_permissions: {
+              include: {
+                permission: true
+              }
+            }
+          }
+        } 
+      }
+    });
+
+    if (!user || !user.is_active) {
+      throw new ApiError('User not found or inactive', 401);
+    }
+
+    const permissions = user.role.role_permissions.map(rp => 
+      `${rp.permission.module}.${rp.permission.action}`
+    );
+
     const payload = {
-      user_id: decoded.user_id,
-      role_id: decoded.role_id,
-      role_key: decoded.role_key,
-      role_name: decoded.role_name
+      user_id: user.id,
+      role_id: user.role_id,
+      role_key: user.role.role_key,
+      role_name: user.role.name,
+      permissions
     };
 
     const accessToken = generateAccessToken(payload);
