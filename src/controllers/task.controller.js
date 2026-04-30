@@ -634,6 +634,9 @@ export const acceptTask = async (req, res, next) => {
     const taskId = parseInt(id);
 
     await prisma.$transaction(async (tx) => {
+      const task = await tx.tasks.findUnique({ where: { id: taskId } });
+      if (!task) throw new ApiError('Task not found', 404);
+
       const agent = await tx.task_agents.findFirst({
         where: { task_id: taskId, staff_id },
         orderBy: { slot_number: 'desc' }
@@ -666,15 +669,15 @@ export const acceptTask = async (req, res, next) => {
       });
 
       // 3. Sync Task Status
-      await syncTaskStatus(taskId, tx);
+      const finalTaskStatus = await syncTaskStatus(taskId, tx);
 
       // 4. Timeline
       await tx.task_timeline.create({
         data: {
           task_id: taskId,
           event_type: 'staff_accepted',
-          from_status: agent.agent_status,
-          to_status: 'accepted',
+          from_status: task.status,
+          to_status: finalTaskStatus,
           actor_id: staff_id,
           actor_type: 'delivery_staff',
           staff_id
@@ -686,7 +689,6 @@ export const acceptTask = async (req, res, next) => {
         where: { id: agent.id },
         select: { assigned_by: true, staff: { select: { name: true } } }
       });
-      const task = await tx.tasks.findUnique({ where: { id: taskId } });
       if (agentDetails?.assigned_by) {
         await sendNotification({
           user_id: agentDetails.assigned_by,
@@ -715,6 +717,7 @@ export const pickupTask = async (req, res, next) => {
     const taskId = parseInt(id);
 
     await prisma.$transaction(async (tx) => {
+      const task = await tx.tasks.findUnique({ where: { id: taskId } });
       const agent = await tx.task_agents.findFirst({
         where: { task_id: taskId, staff_id },
         orderBy: { slot_number: 'desc' }
@@ -736,15 +739,15 @@ export const pickupTask = async (req, res, next) => {
       });
 
       // 2. Sync Task Status
-      await syncTaskStatus(taskId, tx);
+      const finalTaskStatus = await syncTaskStatus(taskId, tx);
 
       // 3. Timeline
       await tx.task_timeline.create({
         data: {
           task_id: taskId,
-          event_type: 'staff_picked_up',
-          from_status: agent.agent_status,
-          to_status: 'picked_up',
+          event_type: 'picked_up',
+          from_status: task.status,
+          to_status: finalTaskStatus,
           actor_id: staff_id,
           actor_type: 'delivery_staff',
           staff_id
@@ -752,7 +755,6 @@ export const pickupTask = async (req, res, next) => {
       });
 
       // 4. Notify Creator (Admin)
-      const task = await tx.tasks.findUnique({ where: { id: taskId } });
       if (task.created_by) {
         await sendNotification({
           user_id: task.created_by,
@@ -782,6 +784,7 @@ export const completeTask = async (req, res, next) => {
 
     await prisma.$transaction(async (tx) => {
       const today = new Date().toISOString().split('T')[0];
+      const task = await tx.tasks.findUnique({ where: { id: taskId } });
 
       const agent = await tx.task_agents.findFirst({
         where: { task_id: taskId, staff_id },
@@ -804,7 +807,7 @@ export const completeTask = async (req, res, next) => {
       });
 
       // 2. Sync Task Status
-      await syncTaskStatus(taskId, tx);
+      const finalTaskStatus = await syncTaskStatus(taskId, tx);
 
       // 3. Update Availability
       await tx.staff_current_status.updateMany({
@@ -826,9 +829,9 @@ export const completeTask = async (req, res, next) => {
       await tx.task_timeline.create({
         data: {
           task_id: taskId,
-          event_type: 'staff_delivered',
-          from_status: agent.agent_status,
-          to_status: 'delivered',
+          event_type: 'delivered',
+          from_status: task.status,
+          to_status: finalTaskStatus,
           actor_id: staff_id,
           actor_type: 'delivery_staff',
           staff_id
@@ -836,7 +839,6 @@ export const completeTask = async (req, res, next) => {
       });
 
       // 6. Notify Creator
-      const task = await tx.tasks.findUnique({ where: { id: taskId } });
       if (task.created_by) {
         await sendNotification({
           user_id: task.created_by,
@@ -868,6 +870,7 @@ export const rejectTask = async (req, res, next) => {
     const taskId = parseInt(id);
 
     await prisma.$transaction(async (tx) => {
+      const task = await tx.tasks.findUnique({ where: { id: taskId } });
       const agent = await tx.task_agents.findFirst({
         where: { task_id: taskId, staff_id },
         orderBy: { slot_number: 'desc' }
@@ -902,16 +905,15 @@ export const rejectTask = async (req, res, next) => {
       });
 
       // 4. Sync Task Status
-      await syncTaskStatus(taskId, tx);
+      const finalTaskStatus = await syncTaskStatus(taskId, tx);
 
       // 5. Timeline
-      const task = await tx.tasks.findUnique({ where: { id: taskId }, select: { task_number: true, status: true } });
       await tx.task_timeline.create({
         data: {
           task_id: taskId,
           event_type: 'staff_rejected',
-          from_status: agent.agent_status,
-          to_status: 'delivery_reassigned',
+          from_status: task.status,
+          to_status: finalTaskStatus,
           actor_id: staff_id,
           actor_type: 'delivery_staff',
           staff_id,
@@ -1089,22 +1091,26 @@ export const updateAgentStatusAdmin = async (req, res, next) => {
         });
       }
 
-      // 3. Timeline
+      // 3. Sync Task Status
+      const finalTaskStatus = await syncTaskStatus(taskId, tx);
+
+      // 4. Timeline (Using task statuses for the enum)
       await tx.task_timeline.create({
         data: {
           task_id: taskId,
-          event_type: status === 'accepted' ? 'staff_accepted' : status === 'picked_up' ? 'staff_picked_up' : status === 'delivered' ? 'staff_delivered' : 'staff_rejected',
-          from_status: agent.agent_status,
-          to_status: status === 'delivered' ? 'completed' : status, // Placeholder, syncTaskStatus will fix
+          event_type: 
+            status === 'accepted' ? 'staff_accepted' : 
+            status === 'picked_up' ? 'picked_up' : 
+            status === 'delivered' ? 'delivered' : 
+            'staff_rejected',
+          from_status: freshTask.status, // Previous Task Status
+          to_status: finalTaskStatus,    // New Task Status
           actor_id: admin_id,
           actor_type: 'admin',
           staff_id: staffId,
           notes: notes || `Admin override to ${status}`
         }
       });
-
-      // 4. Sync Task Status
-      await syncTaskStatus(taskId, tx);
     });
 
     return successResponse(res, null, `Agent status updated to ${status} successfully`);
