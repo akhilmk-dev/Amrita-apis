@@ -326,7 +326,7 @@ export const cancelTask = async (req, res, next) => {
       },
       include: {
         staff: {
-          select: { user_id: true }
+          select: { id: true }
         }
       }
     });
@@ -359,6 +359,12 @@ export const cancelTask = async (req, res, next) => {
         data: { agent_status: 'rejected' }
       });
 
+      // Update their history to rejected as well to clear the slot
+      await tx.task_assignment_history.updateMany({
+        where: { task_id: taskId, response: { in: ['pending', 'accepted'] } },
+        data: { response: 'rejected', response_at: new Date(), rejection_notes: 'Task cancelled by admin' }
+      });
+
       // Reset their current_task_id in staff_current_status
       await tx.staff_current_status.updateMany({
         where: { current_task_id: taskId },
@@ -376,10 +382,10 @@ export const cancelTask = async (req, res, next) => {
 
     // 1. Notify Assigned Staff
     for (const agent of assignedAgents) {
-      if (agent.staff?.user_id) {
+      if (agent.staff?.id) {
         sendNotification({
           ...notificationPayload,
-          user_id: agent.staff.user_id,
+          user_id: agent.staff.id,
           role_key: 'delivery_staff'
         });
       }
