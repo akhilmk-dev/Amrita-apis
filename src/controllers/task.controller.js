@@ -458,17 +458,20 @@ export const updateTaskAgents = async (req, res, next) => {
 
     const taskId = parseInt(id);
     const task = await prisma.tasks.findUnique({ 
-      where: { id: taskId },
-      include: { task_agents: true }
+      where: { id: taskId }
     });
     if (!task) throw new ApiError('Task not found', 404);
 
     await prisma.$transaction(async (tx) => {
+      // 1. Get current max slot once to avoid repeated queries in loop
+      const existingAgents = await tx.task_agents.findMany({
+        where: { task_id: taskId },
+        select: { slot_number: true }
+      });
+      let nextSlot = existingAgents.reduce((max, a) => Math.max(max, a.slot_number), 0) + 1;
+
       for (const agent of agents) {
-        // Find current max slot
-        const allAgents = await tx.task_agents.findMany({ where: { task_id: taskId } });
-        const maxSlot = allAgents.reduce((max, a) => Math.max(max, a.slot_number), 0);
-        const targetSlot = maxSlot + 1;
+        const targetSlot = nextSlot++;
 
         // If not replacing someone, increment required_agents
         if (!agent.replace_staff_id) {
@@ -525,12 +528,14 @@ export const updateTaskAgents = async (req, res, next) => {
           role_key: 'delivery_staff'
         }, tx);
 
-        // Trigger 60s timeout timer
+        // Trigger 60s timeout timer (Outside transaction context)
         setTimeout(() => handleAssignmentTimeout(taskId, agent.staff_id, actor_id), 60000);
       }
 
       // Sync Task Status
       await syncTaskStatus(taskId, tx);
+    }, {
+      timeout: 15000 // Increase timeout to 15s to prevent "Transaction not found" on slow connections/OneSignal
     });
 
     return successResponse(res, null, 'Agents updated successfully');
