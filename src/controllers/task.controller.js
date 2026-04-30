@@ -529,7 +529,7 @@ export const updateTaskAgents = async (req, res, next) => {
         }, tx);
 
         // Trigger 60s timeout timer (Outside transaction context)
-        setTimeout(() => handleAssignmentTimeout(taskId, agent.staff_id, actor_id), 60000);
+        setTimeout(() => handleAssignmentTimeout(taskId, agent.staff_id, actor_id, targetSlot), 60000);
       }
 
       // Sync Task Status
@@ -547,23 +547,28 @@ export const updateTaskAgents = async (req, res, next) => {
 /**
  * Handle Assignment Timeout (60s Background Timer)
  */
-const handleAssignmentTimeout = async (taskId, staff_id, admin_id) => {
+const handleAssignmentTimeout = async (taskId, staff_id, admin_id, slot_number) => {
   try {
     const agent = await prisma.task_agents.findFirst({
-      where: { task_id: taskId, staff_id, agent_status: 'pending' }
+      where: { 
+        task_id: taskId, 
+        staff_id, 
+        slot_number, 
+        agent_status: 'pending' 
+      }
     });
 
     if (agent) {
       await prisma.$transaction(async (tx) => {
         // 1. Mark as timeout in task_agents
         await tx.task_agents.updateMany({
-          where: { task_id: taskId, staff_id, agent_status: 'pending' },
+          where: { task_id: taskId, staff_id, slot_number, agent_status: 'pending' },
           data: { agent_status: 'timeout' }
         });
 
         // 2. Mark as timeout in history
         await tx.task_assignment_history.updateMany({
-          where: { task_id: taskId, staff_id, response: 'pending' },
+          where: { task_id: taskId, staff_id, slot_number, response: 'pending' },
           data: {
             response: 'timeout',
             response_at: new Date()
