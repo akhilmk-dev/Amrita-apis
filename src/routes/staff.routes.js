@@ -23,6 +23,12 @@ const router = Router();
  *     tags: [Staff]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: task_id
+ *         schema:
+ *           type: integer
+ *         description: Optional Task ID. If provided, excludes staff who have already rejected or timed out for this task.
  *     responses:
  *       200:
  *         description: List of available staff

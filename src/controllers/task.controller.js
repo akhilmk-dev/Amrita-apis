@@ -247,7 +247,15 @@ export const getTaskById = async (req, res, next) => {
       throw new ApiError('Task not found', 404);
     }
 
-    return successResponse(res, task, 'Task details retrieved successfully');
+    const activeAgentsCount = task.task_agents.filter(a => !['rejected', 'timeout'].includes(a.agent_status)).length;
+    const pendingReassignmentsCount = Math.max(0, task.required_agents - activeAgentsCount);
+
+    const taskResponse = {
+      ...task,
+      pending_reassignments_count: pendingReassignmentsCount
+    };
+
+    return successResponse(res, taskResponse, 'Task details retrieved successfully');
   } catch (error) {
     next(error);
   }
