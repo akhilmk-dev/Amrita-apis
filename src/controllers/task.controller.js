@@ -581,20 +581,11 @@ export const reassignTaskAgents = async (req, res, next) => {
   }
 };
 
-import fs from 'fs';
-import path from 'path';
-
 /**
  * Handle Assignment Timeout (60s Background Timer)
  */
 const handleAssignmentTimeout = async (taskId, staff_id, admin_id, slot_number) => {
-  const logFile = path.join(process.cwd(), 'timeout_debug.log');
-  const logMsg = (msg) => {
-    console.log(msg);
-    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${msg}\n`);
-  };
-
-  logMsg(`[Timeout] Checking timeout for Task ${taskId}, Staff ${staff_id}, Slot ${slot_number}`);
+  console.log(`[Timeout] Checking timeout for Task ${taskId}, Staff ${staff_id}, Slot ${slot_number}`);
   try {
     const agent = await prisma.task_agents.findFirst({
       where: { 
@@ -606,11 +597,11 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id, slot_number) 
     });
 
     if (!agent) {
-      logMsg(`[Timeout] No pending agent found for Task ${taskId}, Staff ${staff_id}, Slot ${slot_number}. (May have been already accepted/rejected)`);
+      console.log(`[Timeout] No pending agent found for Task ${taskId}, Staff ${staff_id}, Slot ${slot_number}. (May have been already accepted/rejected)`);
     }
 
     if (agent) {
-      logMsg(`[Timeout] EXECUTING timeout for Task ${taskId}, Staff ${staff_id}, Slot ${slot_number}`);
+      console.log(`[Timeout] EXECUTING timeout for Task ${taskId}, Staff ${staff_id}, Slot ${slot_number}`);
       await prisma.$transaction(async (tx) => {
         const freshTask = await tx.tasks.findUnique({ where: { id: taskId }, select: { status: true, task_number: true } });
 
@@ -657,10 +648,9 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id, slot_number) 
           }, tx);
         }
       });
-      logMsg(`Assignment timeout handled successfully for Task ${taskId}, Staff ${staff_id}`);
+      console.log(`Assignment timeout handled successfully for Task ${taskId}, Staff ${staff_id}`);
     }
   } catch (error) {
-    logMsg(`Error handling assignment timeout: ${error.message}\n${error.stack}`);
     console.error('Error handling assignment timeout:', error);
   }
 };
