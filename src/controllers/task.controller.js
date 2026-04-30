@@ -168,7 +168,13 @@ export const getAllTasks = async (req, res, next) => {
       where.OR = [
         { task_number: { contains: search } },
         { patient_name: { contains: search } },
-        { patient_mrd: { contains: search } }
+        { patient_mrd: { contains: search } },
+        { phone_number: { contains: search } },
+        { purpose_of_transfer: { contains: search } },
+        { requestor_name: { contains: search } },
+        { requestor_phone_number: { contains: search } },
+        { remarks: { contains: search } },
+        { asset_type: { contains: search } }
       ];
     }
 

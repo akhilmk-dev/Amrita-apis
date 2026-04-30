@@ -92,7 +92,7 @@ router.post('/tap', authMiddleware, checkPermission('delivery', 'tap'), shiftCon
  *           type: integer
  *     responses:
  *       200:
- *         description: Task accepted
+ *         description: Task accepted by the individual agent. Task status recalculates automatically.
  */
 router.post('/tasks/:id/accept', authMiddleware, checkPermission('delivery', 'accept_reject'), taskController.acceptTask);
 
@@ -122,7 +122,7 @@ router.post('/tasks/:id/accept', authMiddleware, checkPermission('delivery', 'ac
  *                 type: string
  *     responses:
  *       200:
- *         description: Task rejected
+ *         description: Task rejected by the individual agent. Task status moves to delivery_reassigned.
  */
 router.post('/tasks/:id/reject', authMiddleware, checkPermission('delivery', 'accept_reject'), taskController.rejectTask);
 
@@ -131,6 +131,7 @@ router.post('/tasks/:id/reject', authMiddleware, checkPermission('delivery', 'ac
  * /api/v1/delivery/tasks/{id}/pickup:
  *   post:
  *     summary: Mark task as picked up (Delivery Staff)
+ *     description: Individual agent pickup. Task status only moves to picked_up when ALL agents have picked up.
  *     tags: [Delivery App]
  *     security:
  *       - bearerAuth: []
@@ -151,6 +152,7 @@ router.post('/tasks/:id/pickup', authMiddleware, checkPermission('delivery', 'up
  * /api/v1/delivery/tasks/{id}/complete:
  *   post:
  *     summary: Mark task as completed (Delivery Staff)
+ *     description: Individual agent delivery. Task status only moves to completed when ALL agents have delivered.
  *     tags: [Delivery App]
  *     security:
  *       - bearerAuth: []

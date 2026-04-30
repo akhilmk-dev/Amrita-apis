@@ -312,79 +312,6 @@ const router = Router();
  *       200:
  *         description: Status updated successfully
  *
- * /api/v1/tasks/{id}/reject:
- *   post:
- *     summary: Reject task assignment (Delivery Staff)
- *     tags: [Tasks]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               rejection_reason_id:
- *                 type: integer
- *               rejection_notes:
- *                 type: string
- *     responses:
- *       200:
- *         description: Task rejected
- *
- * /api/v1/tasks/{id}/accept:
- *   post:
- *     summary: Accept task assignment (Delivery Staff)
- *     tags: [Tasks]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Task accepted
- *
- * /api/v1/tasks/{id}/pickup:
- *   post:
- *     summary: Mark task as picked up (Delivery Staff)
- *     tags: [Tasks]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Task picked up
- *
- * /api/v1/tasks/{id}/complete:
- *   post:
- *     summary: Mark task as completed (Delivery Staff)
- *     tags: [Tasks]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Task completed
  */
 
 
@@ -392,10 +319,6 @@ router.post('/', authMiddleware, checkPermission('tasks', 'create'), validate(ta
 router.get('/', authMiddleware, checkPermission('tasks', 'view'), validate(taskQuerySchema), taskController.getAllTasks);
 router.get('/:id', authMiddleware, checkPermission('tasks', 'view'), taskController.getTaskById);
 router.post('/:id/agents', authMiddleware, checkPermission('tasks', 'assign'), validate(assignAgentsSchema), taskController.updateTaskAgents);
-router.post('/:id/reject', authMiddleware, checkPermission('tasks', 'update_status'), taskController.rejectTask);
-router.post('/:id/accept', authMiddleware, checkPermission('tasks', 'update_status'), taskController.acceptTask);
-router.post('/:id/pickup', authMiddleware, checkPermission('tasks', 'update_status'), taskController.pickupTask);
-router.post('/:id/complete', authMiddleware, checkPermission('tasks', 'update_status'), taskController.completeTask);
 router.put('/:id', authMiddleware, checkPermission('tasks', 'update_status'), validate(updateTaskSchema), taskController.updateTask);
 router.post('/:id/cancel', authMiddleware, checkPermission('tasks', 'cancel'), taskController.cancelTask);
 
