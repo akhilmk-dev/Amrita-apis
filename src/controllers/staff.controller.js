@@ -9,32 +9,51 @@ import dayjs from 'dayjs';
  */
 export const getAvailableStaff = async (req, res, next) => {
   try {
+    const { task_id } = req.query;
     const todayStr = dayjs().format('YYYY-MM-DD');
 
-    const availableStaff = await prisma.users.findMany({
-      where: {
-        is_active: true,
-        role: {
-          role_key: 'delivery_staff'
-        },
-        // Must have an active shift started today
-        staff_shifts: {
-          some: {
-            shift_date: new Date(todayStr),
-            is_complete: false
-          }
-        },
-        // Must be explicitly marked as available in status table
-        staff_current_status: {
-          availability: 'available'
-        },
-        // Must not have any active task assignments
-        task_agents: {
-          none: {
-            agent_status: { in: ['pending', 'accepted', 'picked_up'] }
-          }
+    const where = {
+      is_active: true,
+      role: {
+        role_key: 'delivery_staff'
+      },
+      // Must have an active shift started today
+      staff_shifts: {
+        some: {
+          shift_date: new Date(todayStr),
+          is_complete: false
         }
       },
+      // Must be explicitly marked as available in status table
+      staff_current_status: {
+        availability: 'available'
+      },
+      // Must not have any active task assignments
+      task_agents: {
+        none: {
+          agent_status: { in: ['pending', 'accepted', 'picked_up'] }
+        }
+      }
+    };
+
+    // If task_id provided, exclude staff who rejected/timeout for this task
+    if (task_id) {
+      const taskId = parseInt(task_id);
+      const excludedStaff = await prisma.task_agents.findMany({
+        where: {
+          task_id: taskId,
+          agent_status: { in: ['rejected', 'timeout'] }
+        },
+        select: { staff_id: true }
+      });
+      const excludedIds = excludedStaff.map(s => s.staff_id);
+      if (excludedIds.length > 0) {
+        where.id = { notIn: excludedIds };
+      }
+    }
+
+    const availableStaff = await prisma.users.findMany({
+      where,
       select: {
         id: true,
         name: true,

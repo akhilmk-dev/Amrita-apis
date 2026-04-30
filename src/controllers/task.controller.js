@@ -95,7 +95,7 @@ export const createTask = async (req, res, next) => {
         scheduled_at: date_time ? new Date(date_time) : null,
         transfer_purpose: purpose_of_transfer,
         remarks,
-        required_agents: 1,
+        required_agents: 0,
         status: 'new',
         sla_minutes: 15,
         created_by: req.user?.user_id || null
@@ -444,13 +444,10 @@ export const deleteTask = async (req, res, next) => {
   }
 };
 
-/**
- * Unified Assign/Reassign Agents to Task
- */
 export const updateTaskAgents = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { agents } = req.body; // Array of { staff_id, agent_label, slot_number }
+    const { agents } = req.body; // Array of { staff_id, agent_label, replace_staff_id }
     const actor_id = req.user?.user_id;
 
     const taskId = parseInt(id);
@@ -462,92 +459,72 @@ export const updateTaskAgents = async (req, res, next) => {
 
     await prisma.$transaction(async (tx) => {
       for (const agent of agents) {
-        let targetSlot = agent.slot_number;
+        // Find current max slot
+        const allAgents = await tx.task_agents.findMany({ where: { task_id: taskId } });
+        const maxSlot = allAgents.reduce((max, a) => Math.max(max, a.slot_number), 0);
+        const targetSlot = maxSlot + 1;
 
-        // Smart Slotting: If no slot_number provided, find the next available one
-        if (!targetSlot) {
-          const usedSlots = task.task_agents.map(a => a.slot_number);
-          // Also check what we've already assigned in this loop
-          // (Simplified: for now we assume one assignment at a time or provided slots)
-          targetSlot = 1;
-          while (usedSlots.includes(targetSlot)) {
-            targetSlot++;
-          }
+        // If not replacing someone, increment required_agents
+        if (!agent.replace_staff_id) {
+          await tx.tasks.update({
+            where: { id: taskId },
+            data: { required_agents: { increment: 1 } }
+          });
         }
 
-        const existingAgent = task.task_agents.find(a => a.slot_number === targetSlot);
-        const isSameStaff = existingAgent && existingAgent.staff_id === agent.staff_id;
-        const isActiveAgent = existingAgent && ['accepted', 'picked_up'].includes(existingAgent.agent_status);
-
-        // Upsert Task Agent (Replace if slot exists, or create new)
-        await tx.task_agents.upsert({
-          where: { task_id_slot_number: { task_id: taskId, slot_number: targetSlot } },
-          create: {
+        // Create Task Agent (Always a new row)
+        await tx.task_agents.create({
+          data: {
             task_id: taskId,
             staff_id: agent.staff_id,
             agent_label: agent.agent_label || 'Agent',
             slot_number: targetSlot,
             assigned_by: actor_id,
             agent_status: 'pending'
-          },
-          update: {
-            staff_id: agent.staff_id,
-            agent_label: agent.agent_label || existingAgent?.agent_label || 'Agent',
-            assigned_by: actor_id,
-            // Only reset to pending if it's a different staff member OR if the current agent isn't already active
-            ...(isSameStaff && isActiveAgent ? {} : { agent_status: 'pending' })
           }
         });
 
-        // Only notify if it's a new assignment or a reassignment to this slot
-        if (!isSameStaff || !isActiveAgent) {
-          // Record History
-          await tx.task_assignment_history.create({
-            data: {
-              task_id: taskId,
-              staff_id: agent.staff_id,
-              slot_number: targetSlot,
-              assigned_by: actor_id,
-              assignment_round: 1,
-              response: 'pending'
-            }
-          });
-
-          // Timeline
-          await tx.task_timeline.create({
-            data: {
-              task_id: taskId,
-              event_type: 'staff_assigned',
-              from_status: task.status,
-              to_status: 'delivery_assigned',
-              actor_id,
-              actor_type: 'admin',
-              staff_id: agent.staff_id
-            }
-          });
-
-          // Notification
-          await sendNotification({
-            user_id: agent.staff_id,
+        // Record History
+        await tx.task_assignment_history.create({
+          data: {
             task_id: taskId,
-            type: 'task_assigned',
-            title: 'New Job Assigned',
-            body: `You have been assigned to Task ${task.task_number}. Please accept within 60 seconds.`,
-            role_key: 'delivery_staff'
-          }, tx);
-
-          // Trigger 60s timeout timer
-          setTimeout(() => handleAssignmentTimeout(taskId, agent.staff_id, actor_id), 60000);
-        }
-      }
-
-      // Update Task Status to delivery_assigned if not already
-      if (task.status === 'new' || task.status === 'delivery_reassigned') {
-        await tx.tasks.update({
-          where: { id: taskId },
-          data: { status: 'delivery_assigned', updated_at: new Date() }
+            staff_id: agent.staff_id,
+            slot_number: targetSlot,
+            assigned_by: actor_id,
+            assignment_round: 1,
+            response: 'pending'
+          }
         });
+
+        // Timeline
+        await tx.task_timeline.create({
+          data: {
+            task_id: taskId,
+            event_type: 'staff_assigned',
+            from_status: task.status,
+            to_status: 'delivery_assigned',
+            actor_id,
+            actor_type: 'admin',
+            staff_id: agent.staff_id
+          }
+        });
+
+        // Notification
+        await sendNotification({
+          user_id: agent.staff_id,
+          task_id: taskId,
+          type: 'task_assigned',
+          title: 'New Job Assigned',
+          body: `You have been assigned to Task ${task.task_number}. Please accept within 60 seconds.`,
+          role_key: 'delivery_staff'
+        }, tx);
+
+        // Trigger 60s timeout timer
+        setTimeout(() => handleAssignmentTimeout(taskId, agent.staff_id, actor_id), 60000);
       }
+
+      // Sync Task Status
+      await syncTaskStatus(taskId, tx);
     });
 
     return successResponse(res, null, 'Agents updated successfully');
@@ -565,12 +542,12 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id) => {
       where: { task_id: taskId, staff_id, agent_status: 'pending' }
     });
 
-    // If still pending after 60s
     if (agent) {
       await prisma.$transaction(async (tx) => {
-        // 1. Remove from task_agents
-        await tx.task_agents.deleteMany({
-          where: { task_id: taskId, staff_id }
+        // 1. Mark as timeout in task_agents
+        await tx.task_agents.updateMany({
+          where: { task_id: taskId, staff_id, agent_status: 'pending' },
+          data: { agent_status: 'timeout' }
         });
 
         // 2. Mark as timeout in history
@@ -582,19 +559,15 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id) => {
           }
         });
 
-        // 3. Always set task → delivery_reassigned when any agent times out
-        const taskDetails2 = await tx.tasks.findUnique({ where: { id: taskId }, select: { status: true } });
-        await tx.tasks.update({
-          where: { id: taskId },
-          data: { status: 'delivery_reassigned', updated_at: new Date() }
-        });
+        // 3. Recalculate Task Status (will move to delivery_reassigned because Active < Target)
+        await syncTaskStatus(taskId, tx);
 
         // 4. Timeline
         await tx.task_timeline.create({
           data: {
             task_id: taskId,
             event_type: 'staff_timeout',
-            from_status: taskDetails2?.status || 'delivery_assigned',
+            from_status: 'delivery_assigned', // Fallback
             to_status: 'delivery_reassigned',
             actor_id: staff_id,
             actor_type: 'system',
@@ -610,7 +583,7 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id) => {
           type: 'staff_timeout',
           title: 'Staff Assignment Timeout',
           body: `Staff member (ID: ${staff_id}) failed to accept task ${taskDetails?.task_number} within 60s.`,
-          role_key: 'admin' // Or find actual role of admin_id
+          role_key: 'admin'
         }, tx);
       });
       console.log(`Assignment timeout handled for Task ${taskId}, Staff ${staff_id}`);
@@ -628,23 +601,23 @@ export const acceptTask = async (req, res, next) => {
     const { id } = req.params;
     const staff_id = req.user?.user_id;
     const taskId = parseInt(id);
-    const userPermissions = req.user?.permissions || [];
-    const isAdmin = userPermissions.includes('tasks.update_status');
-
-    // Ownership/Permission Check
-    if (!isAdmin) {
-      const isAssigned = await prisma.task_agents.findFirst({
-        where: { task_id: taskId, staff_id: staff_id }
-      });
-      if (!isAssigned) {
-        throw new ApiError('Unauthorized. This task is not assigned to you.', 403);
-      }
-    }
 
     await prisma.$transaction(async (tx) => {
+      const agent = await tx.task_agents.findFirst({
+        where: { task_id: taskId, staff_id },
+        orderBy: { slot_number: 'desc' }
+      });
+
+      if (!agent) throw new ApiError('Agent assignment not found', 404);
+      
+      // Transition Validation
+      if (!getValidTransitions(agent.agent_status).includes('accepted')) {
+        throw new ApiError(`Cannot accept task from status: ${agent.agent_status}`, 400);
+      }
+
       // 1. Update Agent Status
-      await tx.task_agents.updateMany({
-        where: { task_id: taskId, staff_id, agent_status: 'pending' },
+      await tx.task_agents.update({
+        where: { id: agent.id },
         data: { 
           agent_status: 'accepted',
           accepted_at: new Date()
@@ -661,30 +634,16 @@ export const acceptTask = async (req, res, next) => {
         }
       });
 
-      // 3. Only flip task to delivery_accepted when ALL agents have accepted
-      const task = await tx.tasks.findUnique({ where: { id: taskId } });
-      const totalAgents = await tx.task_agents.count({ where: { task_id: taskId } });
-      const acceptedAgents = await tx.task_agents.count({ where: { task_id: taskId, agent_status: 'accepted' } });
-      const allAccepted = totalAgents > 0 && acceptedAgents === totalAgents;
-
-      if (allAccepted) {
-        await tx.tasks.update({
-          where: { id: taskId },
-          data: { 
-            status: 'delivery_accepted', 
-            first_accepted_at: task.first_accepted_at || new Date(),
-            updated_at: new Date() 
-          }
-        });
-      }
+      // 3. Sync Task Status
+      await syncTaskStatus(taskId, tx);
 
       // 4. Timeline
       await tx.task_timeline.create({
         data: {
           task_id: taskId,
           event_type: 'staff_accepted',
-          from_status: task.status,
-          to_status: allAccepted ? 'delivery_accepted' : task.status,
+          from_status: agent.agent_status,
+          to_status: 'accepted',
           actor_id: staff_id,
           actor_type: 'delivery_staff',
           staff_id
@@ -693,9 +652,10 @@ export const acceptTask = async (req, res, next) => {
 
       // 5. Notify the assigner (Admin)
       const agentDetails = await tx.task_agents.findFirst({
-        where: { task_id: taskId, staff_id },
+        where: { id: agent.id },
         select: { assigned_by: true, staff: { select: { name: true } } }
       });
+      const task = await tx.tasks.findUnique({ where: { id: taskId } });
       if (agentDetails?.assigned_by) {
         await sendNotification({
           user_id: agentDetails.assigned_by,
@@ -722,46 +682,37 @@ export const pickupTask = async (req, res, next) => {
     const { id } = req.params;
     const staff_id = req.user?.user_id;
     const taskId = parseInt(id);
-    const userPermissions = req.user?.permissions || [];
-    const isAdmin = userPermissions.includes('tasks.update_status');
-
-    // Ownership/Permission Check
-    if (!isAdmin) {
-      const isAssigned = await prisma.task_agents.findFirst({
-        where: { task_id: taskId, staff_id: staff_id }
-      });
-      if (!isAssigned) {
-        throw new ApiError('Unauthorized. This task is not assigned to you.', 403);
-      }
-    }
 
     await prisma.$transaction(async (tx) => {
-      // 1. Update Agent Status
-      await tx.task_agents.updateMany({
+      const agent = await tx.task_agents.findFirst({
         where: { task_id: taskId, staff_id },
+        orderBy: { slot_number: 'desc' }
+      });
+
+      if (!agent) throw new ApiError('Agent assignment not found', 404);
+
+      if (!getValidTransitions(agent.agent_status).includes('picked_up')) {
+        throw new ApiError(`Cannot pickup task from status: ${agent.agent_status}`, 400);
+      }
+
+      // 1. Update Agent Status
+      await tx.task_agents.update({
+        where: { id: agent.id },
         data: { 
           agent_status: 'picked_up',
           picked_up_at: new Date()
         }
       });
 
-      // 2. Update Task Status
-      const task = await tx.tasks.findUnique({ where: { id: taskId } });
-      await tx.tasks.update({
-        where: { id: taskId },
-        data: { 
-          status: 'picked_up', 
-          first_picked_up_at: task.first_picked_up_at || new Date(),
-          updated_at: new Date() 
-        }
-      });
+      // 2. Sync Task Status
+      await syncTaskStatus(taskId, tx);
 
       // 3. Timeline
       await tx.task_timeline.create({
         data: {
           task_id: taskId,
           event_type: 'staff_picked_up',
-          from_status: task.status,
+          from_status: agent.agent_status,
           to_status: 'picked_up',
           actor_id: staff_id,
           actor_type: 'delivery_staff',
@@ -770,6 +721,7 @@ export const pickupTask = async (req, res, next) => {
       });
 
       // 4. Notify Creator (Admin)
+      const task = await tx.tasks.findUnique({ where: { id: taskId } });
       if (task.created_by) {
         await sendNotification({
           user_id: task.created_by,
@@ -796,104 +748,74 @@ export const completeTask = async (req, res, next) => {
     const { id } = req.params;
     const staff_id = req.user?.user_id;
     const taskId = parseInt(id);
-    const userPermissions = req.user?.permissions || [];
-    const isAdmin = userPermissions.includes('tasks.update_status');
-
-    // Ownership/Permission Check
-    if (!isAdmin) {
-      const isAssigned = await prisma.task_agents.findFirst({
-        where: { task_id: taskId, staff_id: staff_id }
-      });
-      if (!isAssigned) {
-        throw new ApiError('Unauthorized. This task is not assigned to you.', 403);
-      }
-    }
 
     await prisma.$transaction(async (tx) => {
       const today = new Date().toISOString().split('T')[0];
 
-      // Determine which agents to mark as delivered:
-      // - Delivery staff: only their own agent row
-      // - Admin: all assigned agents for this task
-      const agentFilter = isAdmin
-        ? { task_id: taskId }
-        : { task_id: taskId, staff_id };
+      const agent = await tx.task_agents.findFirst({
+        where: { task_id: taskId, staff_id },
+        orderBy: { slot_number: 'desc' }
+      });
+
+      if (!agent) throw new ApiError('Agent assignment not found', 404);
+
+      if (!getValidTransitions(agent.agent_status).includes('delivered')) {
+        throw new ApiError(`Cannot complete task from status: ${agent.agent_status}`, 400);
+      }
 
       // 1. Update Agent Status
-      await tx.task_agents.updateMany({
-        where: agentFilter,
+      await tx.task_agents.update({
+        where: { id: agent.id },
         data: { 
           agent_status: 'delivered',
           delivered_at: new Date()
         }
       });
 
-      // 2. Get all assigned agents so we can update their stats
-      const assignedAgents = await tx.task_agents.findMany({
-        where: { task_id: taskId },
-        select: { staff_id: true }
-      });
+      // 2. Sync Task Status
+      await syncTaskStatus(taskId, tx);
 
-      // 3. Check if all agents completed
-      const pendingAgents = await tx.task_agents.count({
-        where: { task_id: taskId, agent_status: { not: 'delivered' } }
-      });
-
-      if (pendingAgents === 0) {
-        const taskDetails = await tx.tasks.findUnique({ where: { id: taskId } });
-        if (taskDetails.created_by) {
-          await sendNotification({
-            user_id: taskDetails.created_by,
-            task_id: taskId,
-            type: 'task_completed',
-            title: 'Task Completed',
-            body: `Task ${taskDetails.task_number} has been successfully completed.`,
-            role_key: 'admin'
-          }, tx);
+      // 3. Update Availability
+      await tx.staff_current_status.updateMany({
+        where: { staff_id },
+        data: { 
+          availability: 'available',
+          current_task_id: null,
+          updated_at: new Date()
         }
+      });
 
-        await tx.tasks.update({
-          where: { id: taskId },
-          data: { 
-            status: 'completed', 
-            all_delivered_at: new Date(),
-            completed_at: new Date(),
-            updated_at: new Date() 
-          }
-        });
-      }
-
-      // 4. For each assigned agent: free their status & increment total_jobs
-      for (const agent of assignedAgents) {
-        await tx.staff_current_status.updateMany({
-          where: { staff_id: agent.staff_id },
-          data: { 
-            availability: 'available',
-            current_task_id: null,
-            updated_at: new Date()
-          }
-        });
-
-        // Increment total_jobs on the agent's active shift for today
-        await tx.staff_shifts.updateMany({
-          where: { staff_id: agent.staff_id, shift_date: new Date(today), is_complete: false },
-          data: { total_jobs: { increment: 1 } }
-        });
-      }
+      // 4. Increment total_jobs on the agent's active shift
+      await tx.staff_shifts.updateMany({
+        where: { staff_id, shift_date: new Date(today), is_complete: false },
+        data: { total_jobs: { increment: 1 } }
+      });
 
       // 5. Timeline
-      const task = await tx.tasks.findUnique({ where: { id: taskId } });
       await tx.task_timeline.create({
         data: {
           task_id: taskId,
           event_type: 'staff_delivered',
-          from_status: task.status,
-          to_status: pendingAgents === 0 ? 'completed' : task.status,
+          from_status: agent.agent_status,
+          to_status: 'delivered',
           actor_id: staff_id,
-          actor_type: isAdmin ? 'admin' : 'delivery_staff',
-          staff_id: isAdmin ? null : staff_id
+          actor_type: 'delivery_staff',
+          staff_id
         }
       });
+
+      // 6. Notify Creator
+      const task = await tx.tasks.findUnique({ where: { id: taskId } });
+      if (task.created_by) {
+        await sendNotification({
+          user_id: task.created_by,
+          task_id: taskId,
+          type: 'task_completed',
+          title: 'Task Completed',
+          body: `Task ${task.task_number} has been successfully completed.`,
+          role_key: 'admin'
+        }, tx);
+      }
     });
 
     return successResponse(res, null, 'Task completed successfully');
@@ -913,23 +835,18 @@ export const rejectTask = async (req, res, next) => {
     const { rejection_reason_id, rejection_notes } = req.body;
     const staff_id = req.user?.user_id;
     const taskId = parseInt(id);
-    const userPermissions = req.user?.permissions || [];
-    const isAdmin = userPermissions.includes('tasks.update_status');
-
-    // 1. Ownership/Permission Check
-    if (!isAdmin) {
-      const isAssigned = await prisma.task_agents.findFirst({
-        where: { task_id: taskId, staff_id: staff_id }
-      });
-      if (!isAssigned) {
-        throw new ApiError('Unauthorized. This task is not assigned to you.', 403);
-      }
-    }
 
     await prisma.$transaction(async (tx) => {
-      // 1. Mark as rejected in task_agents
-      await tx.task_agents.updateMany({
+      const agent = await tx.task_agents.findFirst({
         where: { task_id: taskId, staff_id },
+        orderBy: { slot_number: 'desc' }
+      });
+
+      if (!agent) throw new ApiError('Agent assignment not found', 404);
+
+      // 1. Mark as rejected in task_agents
+      await tx.task_agents.update({
+        where: { id: agent.id },
         data: {
           agent_status: 'rejected',
           rejection_reason_id,
@@ -947,19 +864,22 @@ export const rejectTask = async (req, res, next) => {
         }
       });
 
-      // 3. Always set task → delivery_reassigned when any agent rejects
-      const task = await tx.tasks.findUnique({ where: { id: taskId }, select: { task_number: true, status: true } });
-      await tx.tasks.update({
-        where: { id: taskId },
-        data: { status: 'delivery_reassigned', updated_at: new Date() }
+      // 3. Update Availability
+      await tx.staff_current_status.updateMany({
+        where: { staff_id },
+        data: { availability: 'available', current_task_id: null }
       });
 
-      // 4. Timeline
+      // 4. Sync Task Status
+      await syncTaskStatus(taskId, tx);
+
+      // 5. Timeline
+      const task = await tx.tasks.findUnique({ where: { id: taskId }, select: { task_number: true, status: true } });
       await tx.task_timeline.create({
         data: {
           task_id: taskId,
           event_type: 'staff_rejected',
-          from_status: task.status,
+          from_status: agent.agent_status,
           to_status: 'delivery_reassigned',
           actor_id: staff_id,
           actor_type: 'delivery_staff',
@@ -968,7 +888,7 @@ export const rejectTask = async (req, res, next) => {
         }
       });
 
-      // 5. Notify Admin
+      // 6. Notify Admin
       const lastAssignment = await tx.task_assignment_history.findFirst({
         where: { task_id: taskId, staff_id, response: 'rejected' },
         orderBy: { id: 'desc' }
@@ -986,6 +906,175 @@ export const rejectTask = async (req, res, next) => {
     });
 
     return successResponse(res, null, 'Task rejected successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Internal: Recalculate and update the overall task status based on individual agent states
+ */
+const syncTaskStatus = async (taskId, tx) => {
+  const task = await tx.tasks.findUnique({
+    where: { id: taskId },
+    include: { task_agents: true }
+  });
+
+  if (!task) return;
+
+  const agents = task.task_agents;
+  const activeAgents = agents.filter(a => !['rejected', 'timeout'].includes(a.agent_status));
+  const activeCount = activeAgents.length;
+  
+  let newStatus = task.status;
+
+  // 1. If any agent failed and hasn't been replaced (Active < Target)
+  if (activeCount < task.required_agents) {
+    newStatus = 'delivery_reassigned';
+  } 
+  // 2. All-or-nothing forward transitions
+  else if (activeCount === task.required_agents && activeCount > 0) {
+    const allAccepted = activeAgents.every(a => ['accepted', 'picked_up', 'delivered'].includes(a.agent_status));
+    const allPickedUp = activeAgents.every(a => ['picked_up', 'delivered'].includes(a.agent_status));
+    const allDelivered = activeAgents.every(a => a.agent_status === 'delivered');
+
+    if (allDelivered) {
+      newStatus = 'completed';
+    } else if (allPickedUp) {
+      newStatus = 'picked_up';
+    } else if (allAccepted) {
+      newStatus = 'delivery_accepted';
+    } else {
+      newStatus = 'delivery_assigned';
+    }
+  }
+
+  if (newStatus !== task.status) {
+    await tx.tasks.update({
+      where: { id: taskId },
+      data: { 
+        status: newStatus,
+        updated_at: new Date(),
+        ...(newStatus === 'completed' ? { completed_at: new Date(), all_delivered_at: new Date() } : {})
+      }
+    });
+  }
+  
+  return newStatus;
+};
+
+/**
+ * Internal: Get valid next statuses for an agent
+ */
+const getValidTransitions = (currentStatus) => {
+  const transitions = {
+    'pending': ['accepted', 'rejected', 'timeout'],
+    'accepted': ['picked_up', 'rejected'],
+    'picked_up': ['delivered', 'rejected'],
+    'delivered': [],
+    'rejected': [],
+    'timeout': []
+  };
+  return transitions[currentStatus] || [];
+};
+
+/**
+ * Admin: Get allowed status transitions for a specific agent
+ */
+export const getAgentNextStatuses = async (req, res, next) => {
+  try {
+    const { id, staff_id } = req.params;
+    const agent = await prisma.task_agents.findFirst({
+      where: { task_id: parseInt(id), staff_id: parseInt(staff_id) },
+      orderBy: { slot_number: 'desc' }
+    });
+
+    if (!agent) throw new ApiError('Agent assignment not found', 404);
+
+    const nextStatuses = getValidTransitions(agent.agent_status);
+    return successResponse(res, nextStatuses, 'Next statuses retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Admin: Force update agent status (Override)
+ */
+export const updateAgentStatusAdmin = async (req, res, next) => {
+  try {
+    const { id, staff_id } = req.params;
+    const { status, notes } = req.body;
+    const admin_id = req.user?.user_id;
+    const taskId = parseInt(id);
+    const staffId = parseInt(staff_id);
+
+    // Permission Check
+    const userPermissions = req.user?.permissions || [];
+    const canUpdate = userPermissions.includes('tasks.update_status');
+    const isDeliveryStaff = req.user?.role_key === 'delivery_staff';
+
+    if (!canUpdate || isDeliveryStaff) {
+      throw new ApiError('Unauthorized. You do not have permission to override status.', 403);
+    }
+
+    const agent = await prisma.task_agents.findFirst({
+      where: { task_id: taskId, staff_id: staffId },
+      orderBy: { slot_number: 'desc' }
+    });
+
+    if (!agent) throw new ApiError('Agent assignment not found', 404);
+
+    // Validate Transition
+    const allowed = getValidTransitions(agent.agent_status);
+    if (!allowed.includes(status)) {
+      throw new ApiError(`Invalid status transition from ${agent.agent_status} to ${status}`, 400);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Update Agent
+      await tx.task_agents.update({
+        where: { id: agent.id },
+        data: { 
+          agent_status: status,
+          ...(status === 'accepted' ? { accepted_at: new Date() } : {}),
+          ...(status === 'picked_up' ? { picked_up_at: new Date() } : {}),
+          ...(status === 'delivered' ? { delivered_at: new Date() } : {})
+        }
+      });
+
+      // 2. Update Staff Availability if needed
+      if (status === 'accepted') {
+        await tx.staff_current_status.updateMany({
+          where: { staff_id: staffId },
+          data: { availability: 'on_job', current_task_id: taskId }
+        });
+      } else if (status === 'delivered' || status === 'rejected' || status === 'timeout') {
+        await tx.staff_current_status.updateMany({
+          where: { staff_id: staffId },
+          data: { availability: 'available', current_task_id: null }
+        });
+      }
+
+      // 3. Timeline
+      await tx.task_timeline.create({
+        data: {
+          task_id: taskId,
+          event_type: status === 'accepted' ? 'staff_accepted' : status === 'picked_up' ? 'staff_picked_up' : status === 'delivered' ? 'staff_delivered' : 'staff_rejected',
+          from_status: agent.agent_status,
+          to_status: status === 'delivered' ? 'completed' : status, // Placeholder, syncTaskStatus will fix
+          actor_id: admin_id,
+          actor_type: 'admin',
+          staff_id: staffId,
+          notes: notes || `Admin override to ${status}`
+        }
+      });
+
+      // 4. Sync Task Status
+      await syncTaskStatus(taskId, tx);
+    });
+
+    return successResponse(res, null, `Agent status updated to ${status} successfully`);
   } catch (error) {
     next(error);
   }

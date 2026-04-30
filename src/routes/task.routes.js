@@ -351,6 +351,10 @@ router.post('/:id/complete', authMiddleware, checkPermission('tasks', 'update_st
 router.put('/:id', authMiddleware, checkPermission('tasks', 'update_status'), validate(updateTaskSchema), taskController.updateTask);
 router.post('/:id/cancel', authMiddleware, checkPermission('tasks', 'cancel'), taskController.cancelTask);
 
+// Admin Agent Status Management
+router.get('/:id/agents/:staff_id/next-statuses', authMiddleware, checkPermission('tasks', 'view'), taskController.getAgentNextStatuses);
+router.patch('/:id/agents/:staff_id/status', authMiddleware, checkPermission('tasks', 'update_status'), taskController.updateAgentStatusAdmin);
+
 
 
 export default router;
