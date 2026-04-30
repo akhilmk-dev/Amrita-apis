@@ -470,7 +470,12 @@ export const updateTaskAgents = async (req, res, next) => {
       });
       if (!freshTask) throw new ApiError('Task not found', 404);
 
-      // 2. Get current max slot to avoid collisions
+      // 2. Set explicit quota and Get current max slot
+      await tx.tasks.update({
+        where: { id: taskId },
+        data: { required_agents: req.body.required_agents }
+      });
+
       const existingAgents = await tx.task_agents.findMany({
         where: { task_id: taskId },
         select: { slot_number: true }
@@ -479,14 +484,8 @@ export const updateTaskAgents = async (req, res, next) => {
 
       for (const agent of agents) {
         const targetSlot = nextSlot++;
-
-        // If not replacing someone, increment required_agents in DB
-        if (!agent.replace_staff_id) {
-          await tx.tasks.update({
-            where: { id: taskId },
-            data: { required_agents: { increment: 1 } }
-          });
-        }
+        
+        // Removed increment logic - using explicit quota above
 
         // Create Task Agent
         await tx.task_agents.create({
@@ -967,8 +966,8 @@ const syncTaskStatus = async (taskId, tx) => {
   if (activeCount < task.required_agents) {
     newStatus = 'delivery_reassigned';
   } 
-  // 2. All-or-nothing forward transitions
-  else if (activeCount === task.required_agents && activeCount > 0) {
+  // 2. All-or-nothing forward transitions (Quota met or exceeded)
+  else if (activeCount >= task.required_agents && activeCount > 0) {
     const allAccepted = activeAgents.every(a => ['accepted', 'picked_up', 'delivered'].includes(a.agent_status));
     const allPickedUp = activeAgents.every(a => ['picked_up', 'delivered'].includes(a.agent_status));
     const allDelivered = activeAgents.every(a => a.agent_status === 'delivered');
@@ -1003,9 +1002,9 @@ const syncTaskStatus = async (taskId, tx) => {
  */
 const getValidTransitions = (currentStatus) => {
   const transitions = {
-    'pending': ['accepted', 'rejected', 'timeout'],
-    'accepted': ['picked_up', 'rejected'],
-    'picked_up': ['delivered', 'rejected'],
+    'pending': ['accepted', 'rejected'],
+    'accepted': ['picked_up'],
+    'picked_up': ['delivered'],
     'delivered': [],
     'rejected': [],
     'timeout': []
@@ -1039,7 +1038,7 @@ export const getAgentNextStatuses = async (req, res, next) => {
 export const updateAgentStatusAdmin = async (req, res, next) => {
   try {
     const { id, staff_id } = req.params;
-    const { status, notes } = req.body;
+    const { status, notes, rejection_reason_id } = req.body;
     const admin_id = req.user?.user_id;
     const taskId = parseInt(id);
     const staffId = parseInt(staff_id);
@@ -1066,6 +1065,8 @@ export const updateAgentStatusAdmin = async (req, res, next) => {
       throw new ApiError(`Invalid status transition from ${agent.agent_status} to ${status}`, 400);
     }
 
+    const freshTask = await prisma.tasks.findUnique({ where: { id: taskId } });
+
     await prisma.$transaction(async (tx) => {
       // 1. Update Agent
       await tx.task_agents.update({
@@ -1074,27 +1075,41 @@ export const updateAgentStatusAdmin = async (req, res, next) => {
           agent_status: status,
           ...(status === 'accepted' ? { accepted_at: new Date() } : {}),
           ...(status === 'picked_up' ? { picked_up_at: new Date() } : {}),
-          ...(status === 'delivered' ? { delivered_at: new Date() } : {})
+          ...(status === 'delivered' ? { delivered_at: new Date() } : {}),
+          ...(status === 'rejected' ? { rejection_reason_id, rejection_notes: notes } : {})
         }
       });
 
-      // 2. Update Staff Availability if needed
+      // 2. Update History if rejected
+      if (status === 'rejected') {
+        await tx.task_assignment_history.updateMany({
+          where: { task_id: taskId, staff_id: staffId, slot_number: agent.slot_number },
+          data: {
+            response: 'rejected',
+            response_at: new Date(),
+            rejection_reason_id,
+            rejection_notes: notes
+          }
+        });
+      }
+
+      // 3. Update Staff Availability if needed
       if (status === 'accepted') {
         await tx.staff_current_status.updateMany({
           where: { staff_id: staffId },
           data: { availability: 'on_job', current_task_id: taskId }
         });
-      } else if (status === 'delivered' || status === 'rejected' || status === 'timeout') {
+      } else if (status === 'delivered' || status === 'rejected') {
         await tx.staff_current_status.updateMany({
           where: { staff_id: staffId },
           data: { availability: 'available', current_task_id: null }
         });
       }
 
-      // 3. Sync Task Status
+      // 4. Sync Task Status
       const finalTaskStatus = await syncTaskStatus(taskId, tx);
 
-      // 4. Timeline (Using task statuses for the enum)
+      // 5. Timeline (Using task statuses for the enum)
       await tx.task_timeline.create({
         data: {
           task_id: taskId,
@@ -1108,7 +1123,9 @@ export const updateAgentStatusAdmin = async (req, res, next) => {
           actor_id: admin_id,
           actor_type: 'admin',
           staff_id: staffId,
-          notes: notes || `Admin override to ${status}`
+          notes: notes || `Admin override to ${status}`,
+          rejection_reason_id: status === 'rejected' ? rejection_reason_id : undefined,
+          rejection_notes: status === 'rejected' ? notes : undefined
         }
       });
     });

@@ -212,6 +212,7 @@ export const taskQuerySchema = z.object({
 });
 export const assignAgentsSchema = z.object({
   body: z.object({
+    required_agents: z.number().int().min(1, 'At least 1 staff is required'),
     agents: z.array(z.object({
       staff_id: z.number().int(),
       agent_label: z.string().optional(),
@@ -223,7 +224,8 @@ export const assignAgentsSchema = z.object({
 export const adminAgentStatusSchema = z.object({
   body: z.object({
     status: z.enum(['accepted', 'picked_up', 'delivered', 'rejected']),
-    notes: z.string().optional()
+    notes: z.string().optional(),
+    rejection_reason_id: z.number().int().optional()
   })
 });
 export const updateProfileSchema = z.object({
