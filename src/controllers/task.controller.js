@@ -466,8 +466,7 @@ export const updateTaskAgents = async (req, res, next) => {
     await prisma.$transaction(async (tx) => {
       // 1. Re-fetch task inside transaction to get absolute latest required_agents
       const freshTask = await tx.tasks.findUnique({ 
-        where: { id: taskId },
-        lock: { mode: 'update' } // Prevent concurrent updates during this transaction
+        where: { id: taskId }
       });
       if (!freshTask) throw new ApiError('Task not found', 404);
 
