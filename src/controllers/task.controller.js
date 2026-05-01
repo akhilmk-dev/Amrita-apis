@@ -530,8 +530,10 @@ const performStaffAssignment = async (taskId, agents, actor_id, isReassignment =
       }, tx);
 
       // 5. Trigger 60s timeout timer
-      console.log(`[${isReassignment ? 'Reassign' : 'Assign'}] Setting 60s timer for Task ${taskId}, Staff ${agent.staff_id}, Slot ${targetSlot}`);
-      setTimeout(() => handleAssignmentTimeout(taskId, agent.staff_id, actor_id, targetSlot), 60000);
+      // Stagger by slot_number (×1000ms) so concurrent timers never collide on the tasks row
+      const delay = 60000 + (targetSlot * 1000);
+      console.log(`[${isReassignment ? 'Reassign' : 'Assign'}] Setting ${delay}ms timer for Task ${taskId}, Staff ${agent.staff_id}, Slot ${targetSlot}`);
+      setTimeout(() => handleAssignmentTimeout(taskId, agent.staff_id, actor_id, targetSlot), delay);
     }
 
     // 6. Sync Task Status
@@ -602,8 +604,14 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id, slot_number) 
 
     if (agent) {
       console.log(`[Timeout] EXECUTING timeout for Task ${taskId}, Staff ${staff_id}, Slot ${slot_number}`);
+
+      // Capture task_number before the transaction for use in the notification below
+      let taskNumber = null;
+      let finalTaskStatus = null;
+
       await prisma.$transaction(async (tx) => {
         const freshTask = await tx.tasks.findUnique({ where: { id: taskId }, select: { status: true, task_number: true } });
+        taskNumber = freshTask?.task_number;
 
         // 1. Mark as timeout in task_agents
         await tx.task_agents.updateMany({
@@ -620,15 +628,15 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id, slot_number) 
           }
         });
 
-        // 3. Recalculate Task Status 
-        const finalTaskStatus = await syncTaskStatus(taskId, tx);
+        // 3. Recalculate Task Status
+        finalTaskStatus = await syncTaskStatus(taskId, tx);
 
         // 4. Timeline
         await tx.task_timeline.create({
           data: {
             task_id: taskId,
             event_type: 'staff_timeout',
-            from_status: freshTask.status, 
+            from_status: freshTask.status,
             to_status: finalTaskStatus,
             actor_id: staff_id,
             actor_type: 'system',
@@ -636,18 +644,25 @@ const handleAssignmentTimeout = async (taskId, staff_id, admin_id, slot_number) 
           }
         });
 
-        // 5. Notify Admin
-        if (admin_id) {
-          await sendNotification({
-            user_id: admin_id,
-            task_id: taskId,
-            type: 'staff_timeout',
-            title: 'Staff Assignment Timeout',
-            body: `Staff member (ID: ${staff_id}) failed to accept task ${freshTask?.task_number} within 60s.`,
-            role_key: 'admin'
-          }, tx);
-        }
+        // NOTE: Notification is intentionally moved OUTSIDE this transaction.
+        // Keeping sendNotification (SSE emit + OneSignal fetch) inside a
+        // Prisma interactive transaction can exhaust the 5-second deadline and
+        // silently roll back the entire timeout operation.
       });
+
+      // 5. Notify Admin — runs AFTER the transaction commits so it can never
+      //    cause the transaction to roll back.
+      if (admin_id) {
+        await sendNotification({
+          user_id: admin_id,
+          task_id: taskId,
+          type: 'staff_timeout',
+          title: 'Staff Assignment Timeout',
+          body: `Staff member (ID: ${staff_id}) failed to accept task ${taskNumber} within 60s.`,
+          role_key: 'admin'
+        }); // uses the global prisma client, not tx
+      }
+
       console.log(`Assignment timeout handled successfully for Task ${taskId}, Staff ${staff_id}`);
     }
   } catch (error) {
