@@ -36,13 +36,15 @@ export const getAvailableStaff = async (req, res, next) => {
       }
     };
 
-    // If task_id provided, exclude staff who rejected/timeout for this task
+    // If task_id provided, exclude staff who REJECTED this specific task.
+    // Timeout staff are re-eligible — they never chose to decline,
+    // so they should appear in the list for reassignment.
     if (task_id) {
       const taskId = parseInt(task_id);
       const excludedStaff = await prisma.task_agents.findMany({
         where: {
           task_id: taskId,
-          agent_status: { in: ['rejected', 'timeout'] }
+          agent_status: 'rejected'
         },
         select: { staff_id: true }
       });
