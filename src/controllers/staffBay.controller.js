@@ -42,10 +42,22 @@ const getQrImageUrl = (req, storedQrCode) => {
 export const getAllBays = async (req, res, next) => {
   try {
     const { page, limit, skip } = getPaginationParams(req.query);
+    const { search } = req.query;
+
+    const where = {};
+    if (search) {
+      where.OR = [
+        { name: { contains: search } },
+        { qr_code: { contains: search } },
+        { floor: { floor_name: { contains: search } } },
+        { floor: { tower: { name: { contains: search } } } }
+      ];
+    }
 
     const [count, bays] = await Promise.all([
-      prisma.staff_bays.count(),
+      prisma.staff_bays.count({ where }),
       prisma.staff_bays.findMany({
+        where,
         skip,
         take: limit,
         include: {

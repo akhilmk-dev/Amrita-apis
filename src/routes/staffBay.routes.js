@@ -33,6 +33,11 @@ const router = Router();
  *         schema:
  *           type: integer
  *           default: 10
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by bay name or QR code URL
  *     responses:
  *       200:
  *         description: List of staff bays with pagination metadata
